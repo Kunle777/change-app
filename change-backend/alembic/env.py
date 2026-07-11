@@ -1,24 +1,36 @@
+import os
 from logging.config import fileConfig
+from dotenv import load_dotenv
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-
 from alembic import context
 
-# this is the Alembic Config object, which provides
+# 1. Load environment variables from your local .env file
+load_dotenv()
+
+# This is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# 2. Extract your DATABASE_URL and strip the async driver (+asyncpg)
+# Alembic runs migrations synchronously by default, requiring a standard postgresql:// connection.
+raw_db_url = os.getenv("DATABASE_URL")
+if raw_db_url:
+    db_url = raw_db_url.replace("+asyncpg", "")
+    config.set_main_option("sqlalchemy.url", db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+# 3. Import your Base registry and your explicit models
+# This forces Python to read your tables and register them on the metadata clipboard.
+from app.database import Base
+from app.users.models import User
+
+target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -74,5 +86,4 @@ def run_migrations_online() -> None:
 
 if context.is_offline_mode():
     run_migrations_offline()
-else:
     run_migrations_online()
