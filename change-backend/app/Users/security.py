@@ -39,3 +39,18 @@ def decode_access_token(token: str) -> str | None:
         return payload.get("sub")
     except JWTError:
         return None
+    
+REFRESH_TOKEN_EXPIRE = 30
+
+def create_refresh_token(user_id:str) -> str:
+    expire = datetime.utcnow() + timedelta(days = REFRESH_TOKEN_EXPIRE)
+    payload = {"sub":user_id,  "type": "refresh", "exp": expire}
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+def decode_refresh_token(token:str) -> str | None:
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") == "refresh":
+            return payload.get("sub")
+    except JWTError:
+        return None
