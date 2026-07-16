@@ -2387,3 +2387,9 @@
 {"_e":"metro:bundling:progress","_t":1784216907031,"id":"4","progress":0,"total":1,"current":0}
 {"_e":"metro:bundling:done","_t":1784216907353,"id":"4","total":1,"ms":323.7421}
 {"_e":"metro:client_log","_t":1784216913088,"level":"error","data":["[Error: Element type is invalid: expected a string (for built-in components) or a class/function (for composite components) but got: object. You likely forgot to export your component from the file it's defined in, or you might have mixed up default and named imports.\n\nCheck the render method of `App`.]"]}
+{"_e":"root:init","_t":1784217369675,"format":"v0-jsonl","version":"57.0.8"}
+{"_e":"env:mode","_t":1784217369677,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1784217369684,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1784217370557,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1784217371673,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1784217372564,"plugins":[]}

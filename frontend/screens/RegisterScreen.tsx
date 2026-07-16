@@ -13,6 +13,7 @@ export default function RegisterScreen({ navigation }: any) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
@@ -24,7 +25,7 @@ export default function RegisterScreen({ navigation }: any) {
     try {
       setLoading(true);
       setError("");
-      const data = await register(email, password);
+      const data = await register(email, password, phone);
       console.log("User registered:", data);
       navigation.navigate("Login");
     } catch (err) {
@@ -65,10 +66,29 @@ export default function RegisterScreen({ navigation }: any) {
         secureTextEntry
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleRegister}>
+      <TextInput
+        style={styles.input}
+        placeholder="Phone Number"
+        value={phone}
+        onChangeText={setPhone}
+        keyboardType="phone-pad"
+      />
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={handleRegister}
+        disabled={loading}
+      >
         <Text style={styles.buttonText}>
           {loading ? "Creating..." : "Register"}
         </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={() => navigation.navigate("Login")}
+        style={{ marginTop: 16, alignItems: "center" }}
+      >
+        <Text style={{ color: "#333" }}>Already have an account? Log In</Text>
       </TouchableOpacity>
     </View>
   );
