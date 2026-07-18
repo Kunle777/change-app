@@ -19,6 +19,7 @@ export default function LoginScreen({ navigation }: any) {
       const data = await login(email, password);
       await SecureStore.setItemAsync("access_token", data.access_token);
     } catch (err) {
+      console.log("Login Error:", err);
       setError("Invalid email or password");
     }
   };

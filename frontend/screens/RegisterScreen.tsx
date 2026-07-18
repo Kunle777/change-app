@@ -6,9 +6,13 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from "react-native";
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { register } from "../services/auth";
+import { RootStackParamList } from "../navigation/AppNavigator";
 
-export default function RegisterScreen({ navigation }: any) {
+type Props = NativeStackScreenProps<RootStackParamList, "Register">;
+
+export default function RegisterScreen({ navigation }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -28,8 +32,9 @@ export default function RegisterScreen({ navigation }: any) {
       const data = await register(email, password, phone);
       console.log("User registered:", data);
       navigation.navigate("Login");
-    } catch (err) {
-      setError("Failed to register user");
+    } catch (err: any) {
+      const message = err?.response?.data?.detail || "Failed to register user";
+      setError(message);
       console.log(err);
     } finally {
       setLoading(false);

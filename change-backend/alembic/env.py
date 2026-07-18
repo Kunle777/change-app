@@ -13,22 +13,22 @@ load_dotenv()
 # access to the values within the .ini file in use.
 config = context.config
 
-# 2. Extract your DATABASE_URL and strip the async driver (+asyncpg)
-# Alembic runs migrations synchronously by default, requiring a standard postgresql:// connection.
+
+# Strip the async driver (+asyncpg) — Alembic's migration runner is synchronous
+# and needs a plain postgresql:// URL, not postgresql+asyncpg://
 raw_db_url = os.getenv("DATABASE_URL")
 if raw_db_url:
-    db_url = raw_db_url.replace("+asyncpg", "")
+    # Alembic runs migrations synchronously — strip the async driver if present
+    if "+asyncpg" in raw_db_url:
+        db_url = raw_db_url.replace("+asyncpg", "")
+    else:
+        db_url = raw_db_url
     config.set_main_option("sqlalchemy.url", db_url)
-
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-
 # 3. Import your Base registry and your explicit models
 # This forces Python to read your tables and register them on the metadata clipboard.
 from app.database import Base
 from app.users.models import User
+from app.tasks.models import Task
 
 target_metadata = Base.metadata
 
@@ -88,3 +88,4 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+

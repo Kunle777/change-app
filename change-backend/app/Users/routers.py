@@ -77,16 +77,15 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
     
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("5/minute")  # Limit to 5 requests per minute
+@limiter.limit("5/minute")
 async def login(request: Request, data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
-    token = create_access_token(str(user.id))
     access_token = create_access_token(str(user.id))
-    refresh_token = decode_refresh_token(str(user.id))
+    refresh_token = create_refresh_token(str(user.id))
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
                                         
 
