@@ -10,6 +10,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.users.security import limiter
 from slowapi.util import get_remote_address
+from app.tasks.routers import router as tasks_router
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ app.add_middleware(
 )
 
 app.include_router(users_router)
+app.include_router(tasks_router)
 
 
 
