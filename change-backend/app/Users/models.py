@@ -16,3 +16,4 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(nullable=True)
     dnd_bypass_enabled: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    snoozed_until: Mapped[datetime] = mapped_column(nullable=True, default=None)
