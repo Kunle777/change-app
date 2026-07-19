@@ -25,3 +25,13 @@ class TaskResponse(BaseModel):
     reminder_time: Optional[datetime]
     recurrence: Optional[str]
     created_at: datetime
+    
+class TaskUpdate(BaseModel):  #Everything is optional with none has default so users can update thier task without being forced to fill a field
+    title:Optional[str] = None
+    priority: Optional[PriorityEnum] = None
+    status: Optional[StatusEnum] = None
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None
+    reminder_time: Optional[datetime] = None
+    recurrence: Optional[str] = None
+
