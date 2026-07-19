@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.tasks.models import Task
 from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate
+from unittest import result
 
 async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUID):
     db_task = Task(
@@ -33,10 +34,19 @@ async def update_task(db: AsyncSession, task_id: uuid.UUID, task_data: TaskUpdat
     if not db_task:
         return None
     
-    for var, value in vars(task_data).items():
-        if value is not None:
-            setattr(db_task, var, value)
+    update_data = task_data.model_dump(exclude_unset=True)
+    for var, value in update_data.items():
+        setattr(db_task, var, value)
     
     await db.commit()
     await db.refresh(db_task)
+    return db_task
+
+async def delete_task(db:AsyncSession, task_id:uuid.UUID, user_id:uuid.UUID):
+    db_task = get_task_by_id(task_id, user_id, db)
+    if not db_task:
+        return None
+    
+    await db.delete(db_task)
+    await db.commit()
     return db_task

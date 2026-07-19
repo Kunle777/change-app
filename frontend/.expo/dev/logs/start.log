@@ -2924,3 +2924,44 @@
 {"_e":"metro:client_log","_t":1784333969214,"level":"log","data":["Running application \"main\" with appParams:\n","{\"hydrate\": undefined, \"rootTag\": \"#root\"}","\nDevelopment-level warnings: ON.\nPerformance optimizations: OFF."]}
 {"_e":"metro:client_log","_t":1784333998753,"level":"warn","data":["props.pointerEvents is deprecated. Use style.pointerEvents"]}
 {"_e":"metro:client_log","_t":1784334004963,"level":"log","data":["User registered:","{\"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3MTU3ZjM2Ni1hY2EyLTQ2NTctOGI4MC0wYjAxZTA1NGZiMjkiLCJleHAiOjE3ODQzMzU4MDR9.8uMKbfyAdCa2A7P6Na5ILqRMb6qVHyoxYYiT2mgAvYg\", \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3MTU3ZjM2Ni1hY2EyLTQ2NTctOGI4MC0wYjAxZTA1NGZiMjkiLCJ0eXBlIjoicmVmcmVzaCIsImV4cCI6MTc4NjkyNjAwNH0.nzPcZtpvDkv8rXTFFhg9aaabtFnG0qH9ba9QchBYvvs\", \"token_type\": \"bearer\"}"]}
+{"_e":"root:init","_t":1784334552742,"format":"v0-jsonl","version":"57.0.8"}
+{"_e":"env:mode","_t":1784334552744,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1784334552748,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1784334553205,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1784334554046,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1784334554784,"plugins":[]}
+{"_e":"metro:instantiate","_t":1784334563693,"atlas":false,"workers":3,"host":"::","port":8081}
+{"_e":"metro:bundling:started","_t":1784334691053,"id":"1","platform":"web","environment":null,"entry":"node_modules\\expo\\AppEntry.js"}
+{"_e":"metro:bundling:progress","_t":1784334691053,"id":"1","progress":0,"total":1,"current":0}
+{"_e":"metro:bundling:progress","_t":1784334691057,"id":"1","progress":0,"total":1,"current":0}
+{"_e":"metro:bundling:progress","_t":1784334691157,"id":"1","progress":0.17031997984378935,"total":63,"current":26}
+{"_e":"metro:bundling:progress","_t":1784334691257,"id":"1","progress":0.24248163452708907,"total":132,"current":65}
+{"_e":"metro:bundling:progress","_t":1784334691357,"id":"1","progress":0.3124523339907955,"total":195,"current":109}
+{"_e":"metro:bundling:progress","_t":1784334691457,"id":"1","progress":0.5780555204870316,"total":267,"current":203}
+{"_e":"metro:bundling:progress","_t":1784334691560,"id":"1","progress":0.7117585123693668,"total":339,"current":286}
+{"_e":"metro:bundling:progress","_t":1784334691661,"id":"1","progress":0.7613417916186083,"total":408,"current":356}
+{"_e":"metro:bundling:progress","_t":1784334691763,"id":"1","progress":0.7985513807152557,"total":423,"current":378}
+{"_e":"metro:bundling:progress","_t":1784334691862,"id":"1","progress":0.8313148788927335,"total":476,"current":434}
+{"_e":"metro:bundling:done","_t":1784334691982,"id":"1","total":476,"ms":929.3049}
+{"_e":"metro:client_log","_t":1784334692441,"level":"log","data":["Running application \"main\" with appParams:\n","{\"hydrate\": undefined, \"rootTag\": \"#root\"}","\nDevelopment-level warnings: ON.\nPerformance optimizations: OFF."]}
+{"_e":"metro:client_log","_t":1784334752382,"level":"warn","data":["props.pointerEvents is deprecated. Use style.pointerEvents"]}
+{"_e":"metro:client_log","_t":1784334755412,"level":"log","data":["User registered:","{\"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhOGRmNDJlNS03Y2Q2LTQwOWEtYWQ0MC0xMzk1OTc3MTZlMTIiLCJleHAiOjE3ODQzMzY1NTV9.SJoVu3xCKidYcvy8iAqtUw47UBeMWvdSzsS1A83_d_s\", \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhOGRmNDJlNS03Y2Q2LTQwOWEtYWQ0MC0xMzk1OTc3MTZlMTIiLCJ0eXBlIjoicmVmcmVzaCIsImV4cCI6MTc4NjkyNjc1NX0.OMyejaaFZ01ejzON88duGGn31dvLbMwddWMozHGkQqg\", \"token_type\": \"bearer\"}"]}
+{"_e":"metro:bundling:started","_t":1784335255820,"id":"2","platform":"web","environment":null,"entry":"node_modules\\expo\\AppEntry.js"}
+{"_e":"metro:bundling:progress","_t":1784335255820,"id":"2","progress":0,"total":1,"current":0}
+{"_e":"metro:bundling:progress","_t":1784335255823,"id":"2","progress":0,"total":1,"current":0}
+{"_e":"metro:bundling:progress","_t":1784335257307,"id":"2","progress":0,"total":1,"current":0}
+{"_e":"metro:bundling:done","_t":1784335257364,"id":"2","total":1,"ms":1543.367}
+{"_e":"metro:client_log","_t":1784335257713,"level":"log","data":["Running application \"main\" with appParams:\n","{\"hydrate\": undefined, \"rootTag\": \"#root\"}","\nDevelopment-level warnings: ON.\nPerformance optimizations: OFF."]}
+{"_e":"metro:bundling:started","_t":1784335259563,"id":"3","platform":"web","environment":null,"entry":"node_modules\\expo\\AppEntry.js"}
+{"_e":"metro:bundling:progress","_t":1784335259563,"id":"3","progress":0,"total":1,"current":0}
+{"_e":"metro:bundling:done","_t":1784335259595,"id":"3","total":1,"ms":32.2381}
+{"_e":"metro:client_log","_t":1784335259819,"level":"log","data":["Running application \"main\" with appParams:\n","{\"hydrate\": undefined, \"rootTag\": \"#root\"}","\nDevelopment-level warnings: ON.\nPerformance optimizations: OFF."]}
+{"_e":"metro:client_log","_t":1784335285413,"level":"log","data":["Login Error:","[AxiosError: Request failed with status code 400]"]}
+{"_e":"metro:client_log","_t":1784335285413,"level":"log","data":["Login Error:","[AxiosError: Request failed with status code 400]"]}
+{"_e":"metro:client_log","_t":1784335285536,"level":"log","data":["Login Error:","[AxiosError: Request failed with status code 400]"]}
+{"_e":"metro:client_log","_t":1784335287549,"level":"log","data":["Login Error:","[AxiosError: Request failed with status code 400]"]}
+{"_e":"metro:client_log","_t":1784335287567,"level":"log","data":["Login Error:","[AxiosError: Request failed with status code 400]"]}
+{"_e":"metro:client_log","_t":1784335464185,"level":"warn","data":["props.pointerEvents is deprecated. Use style.pointerEvents"]}
+{"_e":"metro:client_log","_t":1784335466985,"level":"log","data":["User registered:","{\"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjMzMzOTkwNC1mOTljLTQ4MWMtODA1Zi04YzBlMzJiMmY0MDEiLCJleHAiOjE3ODQzMzcyNjZ9.vdG3GTLqr02e1I6bQhc0dsau08PVlSbL6erbkUmn0uI\", \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjMzMzOTkwNC1mOTljLTQ4MWMtODA1Zi04YzBlMzJiMmY0MDEiLCJ0eXBlIjoicmVmcmVzaCIsImV4cCI6MTc4NjkyNzQ2Nn0.ehSdNW5UEhreen4DxxsuMgD72ajkA401GAxcyDjutZI\", \"token_type\": \"bearer\"}"]}
+{"_e":"metro:client_log","_t":1784335487469,"level":"log","data":["Login Error:","[TypeError: ExpoSecureStore.default.setValueWithKeyAsync is not a function]"]}
+{"_e":"metro:client_log","_t":1784335504442,"level":"log","data":["Login Error:","[TypeError: ExpoSecureStore.default.setValueWithKeyAsync is not a function]"]}
