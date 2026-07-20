@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { register } from "../services/auth";
+import { supabase } from "../services/supabase";
 import { RootStackParamList } from "../navigation/AppNavigator";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Register">;
@@ -16,35 +16,30 @@ export default function RegisterScreen({ navigation }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
-  const [phone, setPhone] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setErrorMsg("Passwords do not match");
       return;
     }
-
-    try {
-      setLoading(true);
-      setError("");
-      const data = await register(email, password, phone);
-      console.log("User registered:", data);
+    setLoading(true);
+    setErrorMsg("");
+    const { data, error: authError } = await supabase.auth.signUp({ email, password });
+    console.log('signUp result:', JSON.stringify({ data, error: authError }));
+    if (authError) {
+      setErrorMsg(authError.message);
+    } else {
       navigation.navigate("Login");
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || "Failed to register user";
-      setError(message);
-      console.log(err);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Create Account</Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {errorMsg.length > 0 ? <Text style={styles.error}>{errorMsg}</Text> : null}
 
       <TextInput
         style={styles.input}
@@ -54,7 +49,6 @@ export default function RegisterScreen({ navigation }: Props) {
         autoCapitalize="none"
         keyboardType="email-address"
       />
-
       <TextInput
         style={styles.input}
         placeholder="Password"
@@ -62,21 +56,12 @@ export default function RegisterScreen({ navigation }: Props) {
         onChangeText={setPassword}
         secureTextEntry
       />
-
       <TextInput
         style={styles.input}
         placeholder="Confirm Password"
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         secureTextEntry
-      />
-
-      <TextInput
-        style={styles.input}
-        placeholder="Phone Number"
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
       />
 
       <TouchableOpacity

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,22 +6,22 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from "react-native";
-import { login } from "../services/auth";
-import * as SecureStore from "expo-secure-store";
+import { supabase } from "../services/supabase";
 
 export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    try {
-      const data = await login(email, password);
-      await SecureStore.setItemAsync("access_token", data.access_token);
-    } catch (err) {
-      console.log("Login Error:", err);
-      setError("Invalid email or password");
+    setLoading(true);
+    setError("");
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) {
+      setError(authError.message);
     }
+    setLoading(false);
   };
 
   return (
@@ -42,8 +42,8 @@ export default function LoginScreen({ navigation }: any) {
         secureTextEntry
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Log In</Text>
+      <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+        <Text style={styles.buttonText}>{loading ? "Logging in..." : "Log In"}</Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={() => navigation.navigate("Register")}>
         <Text style={{ marginTop: 16, textAlign: "center" }}>
