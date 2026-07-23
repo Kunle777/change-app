@@ -1,13 +1,17 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
-load_dotenv()
+backend_dir = Path(__file__).resolve().parents[1]
+load_dotenv(dotenv_path=backend_dir / ".env")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL is None:
-    raise RuntimeError("DATABASE_URL environment variable is not set")
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL or SUPABASE_DB_URL must be set in change-backend/.env before starting the app."
+    )
 
 engine = create_async_engine(
     DATABASE_URL,

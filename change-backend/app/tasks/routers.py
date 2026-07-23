@@ -22,7 +22,13 @@ async def create_task_route(
 ):
     
     return await service.create_task(db,data, current_user.id)
-
+@router.get("/overdue", response_model=TaskResponse)
+async def get_overdue_tasks_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    overdue_tasks = await service.get_overdue_tasks(db, current_user.id)
+    return overdue_tasks
 @router.get("", response_model=list[TaskResponse])
 async def get_tasks_route(
     db:AsyncSession = Depends(get_db),
@@ -52,6 +58,7 @@ async def complete_task_route(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found" )
     return result    
+
 @router.delete("/{task_id}")
 async def delete_task_route(
     task_id: uuid.UUID,
@@ -62,3 +69,15 @@ async def delete_task_route(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return {"message": "Task deleted successfully"}
+
+@router.post("{task_id}/snooze", response_model=TaskResponse)
+async def snooze_task_route(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    result = await service.snooze_task(db, task_id, current_user.id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return result
+

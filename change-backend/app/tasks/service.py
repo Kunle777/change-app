@@ -1,9 +1,10 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from app.tasks.models import Task
 from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate
 from datetime import datetime, timedelta
+
 
 async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUID):
     db_task = Task(
@@ -63,3 +64,18 @@ async def snooze_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
     await db.commit()
     await db.refresh(db_task)
     return db_task
+
+
+async def get_overdue_tasks(db: AsyncSession, user_id: uuid.UUID):
+    current_time = datetime.utcnow()
+    result = await db.execute(
+        select(Task).where(
+            and_(
+                Task.user_id == user_id,
+                Task.due_date < current_time,
+                Task.status != "completed"
+            )
+        )
+    )
+    overdue_task = result.scalars().all()
+    return  overdue_task

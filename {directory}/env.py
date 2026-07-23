@@ -1,58 +1,29 @@
-import os
-import sys
 from logging.config import fileConfig
-from pathlib import Path
 
-from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+
 from alembic import context
 
-backend_dir = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(backend_dir))
-
-# 1. Load environment variables from your local .env file
-load_dotenv(dotenv_path=backend_dir / ".env")
-
-# This is the Alembic Config object, which provides
+# this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-raw_db_url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
-if not raw_db_url:
-    raise RuntimeError(
-        "DATABASE_URL or SUPABASE_DB_URL must be set before running Alembic. "
-        "Add it to change-backend/.env or your shell environment."
-    )
+# Interpret the config file for Python logging.
+# This line sets up loggers basically.
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
 
-# Alembic runs migrations synchronously — strip the async driver if present
-if "+asyncpg" in raw_db_url:
-    db_url = raw_db_url.replace("+asyncpg", "")
-elif "+psycopg" in raw_db_url:
-    db_url = raw_db_url.replace("+psycopg", "+psycopg2")
-else:
-    db_url = raw_db_url
-
-config.set_main_option("sqlalchemy.url", db_url)
-
-# 3. Import your Base registry and your explicit models
-# This forces Python to read your tables and register them on the metadata clipboard.
-from app.database import Base
-from app.users.models import User
-from app.tasks.models import Task
-
-target_metadata = Base.metadata
+# add your model's MetaData object here
+# for 'autogenerate' support
+# from myapp import mymodel
+# target_metadata = mymodel.Base.metadata
+target_metadata = None
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
-
-
-def include_object(object, name, type_, reflected, compare_to):
-    if type_ == "table" and getattr(object, "schema", None) == "auth" and name == "users":
-        return False
-    return True
 
 
 def run_migrations_offline() -> None:
@@ -73,7 +44,6 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -95,9 +65,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            include_object=include_object,
+            connection=connection, target_metadata=target_metadata
         )
 
         with context.begin_transaction():
@@ -108,4 +76,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
