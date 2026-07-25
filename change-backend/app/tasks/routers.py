@@ -47,7 +47,7 @@ async def patch_task_route(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return result
-@router.post("/{task_id}done", response_model=TaskResponse)
+@router.post("/{task_id}/done", response_model=TaskResponse)
 async def complete_task_route(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -70,7 +70,7 @@ async def delete_task_route(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return {"message": "Task deleted successfully"}
 
-@router.post("{task_id}/snooze", response_model=TaskResponse)
+@router.post("/{task_id}/snooze", response_model=TaskResponse)
 async def snooze_task_route(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),

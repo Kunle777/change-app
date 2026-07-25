@@ -1,21 +1,20 @@
-import os
 import jwt as pyjwt
+from jwt import PyJWKClient
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from dotenv import load_dotenv
-
-load_dotenv()
 
 limiter = Limiter(key_func=get_remote_address)
 
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+JWKS_URL = "https://jcflmvahszgqikxtnuwn.supabase.co/auth/v1/.well-known/jwks.json"
+_jwks_client = PyJWKClient(JWKS_URL)
 
 
 def decode_supabase_token(token: str) -> dict:
+    signing_key = _jwks_client.get_signing_key_from_jwt(token)
     payload = pyjwt.decode(
         token,
-        SUPABASE_JWT_SECRET,
-        algorithms=["HS256"],
+        signing_key.key,
+        algorithms=["ES256", "HS256"],
         audience="authenticated",
     )
     return payload

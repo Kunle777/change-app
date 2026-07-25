@@ -1,23 +1,27 @@
 import { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
-import { login } from '../services/auth';
-import * as SecureStore from 'expo-secure-store';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { supabase } from '../services/supabase';
+import { RootStackParamList } from '../navigation/AppNavigator';
 
-export default function LoginScreen({ navigation }: any) {
+type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+
+export default function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    try {
-      const data = await login(email, password);
-      if (data?.access_token) {
-        await SecureStore.setItemAsync('access_token', data.access_token);
-      }
-    } catch (err) {
-      console.log('Login Error:', err);
-      setError('Invalid email or password');
+    setLoading(true);
+    setError('');
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) {
+      setError(authError.message);
+    } else {
+      navigation.navigate('Home');
     }
+    setLoading(false);
   };
 
   return (
@@ -38,8 +42,8 @@ export default function LoginScreen({ navigation }: any) {
         secureTextEntry
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Log In</Text>
+      <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+        <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Log In'}</Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={() => navigation.navigate('Register')}>
         <Text style={{ marginTop: 16, textAlign: 'center' }}>Don't have an account? Register</Text>
@@ -50,25 +54,9 @@ export default function LoginScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24 },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 32,
-    textAlign: 'center',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  button: {
-    backgroundColor: '#333',
-    padding: 14,
-    borderRadius: 8,
-    marginTop: 12,
-  },
+  title: { fontSize: 28, fontWeight: 'bold', marginBottom: 32, textAlign: 'center' },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, marginBottom: 12 },
+  button: { backgroundColor: '#333', padding: 14, borderRadius: 8, marginTop: 12 },
   buttonText: { color: '#fff', textAlign: 'center', fontWeight: '600' },
   error: { color: 'red', marginBottom: 8 },
 });

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { register } from '../services/auth';
+import { supabase } from '../services/supabase';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
@@ -11,7 +11,6 @@ export default function RegisterScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
@@ -20,19 +19,15 @@ export default function RegisterScreen({ navigation }: Props) {
       return;
     }
 
-    try {
-      setLoading(true);
-      setError('');
-      const data = await register(email, password, phone);
-      console.log('User registered:', data);
+    setLoading(true);
+    setError('');
+    const { error: authError } = await supabase.auth.signUp({ email, password });
+    if (authError) {
+      setError(authError.message);
+    } else {
       navigation.navigate('Login');
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || 'Failed to register user';
-      setError(message);
-      console.log(err);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   return (
@@ -65,14 +60,6 @@ export default function RegisterScreen({ navigation }: Props) {
         secureTextEntry
       />
 
-      <TextInput
-        style={styles.input}
-        placeholder="Phone Number"
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-      />
-
       <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
         <Text style={styles.buttonText}>{loading ? 'Creating...' : 'Register'}</Text>
       </TouchableOpacity>
@@ -88,36 +75,10 @@ export default function RegisterScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 24,
-    backgroundColor: '#fff',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  button: {
-    backgroundColor: '#007bff',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  error: {
-    color: 'red',
-    marginBottom: 12,
-  },
+  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  title: { fontSize: 28, fontWeight: 'bold', marginBottom: 16 },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, marginBottom: 12 },
+  button: { backgroundColor: '#007bff', padding: 14, borderRadius: 8, alignItems: 'center' },
+  buttonText: { color: '#fff', fontWeight: '600' },
+  error: { color: 'red', marginBottom: 12 },
 });
