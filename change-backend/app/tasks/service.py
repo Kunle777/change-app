@@ -3,8 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.tasks.models import Task
 from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate
-from datetime import datetime, timedelta
-
+from datetime import datetime, timedelta,timezone
 
 async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUID):
     db_task = Task(
@@ -78,3 +77,16 @@ async def get_overdue_tasks(db: AsyncSession, user_id: uuid.UUID):
     )
     overdue_task = result.scalars().all()
     return  overdue_task
+
+async def get_due_reminders(db: AsyncSession):
+    now = datetime.now(timezone.utc)
+    window_start= now - timedelta(minutes=1)
+    result = await db.execute(
+        select(Task).where(
+            
+                Task.reminder_time >= window_start,
+                Task.reminder_time <= now,
+                Task.status != "completed"
+            
+        )
+    )

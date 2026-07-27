@@ -29,4 +29,5 @@ class Task(Base):
     due_date: Mapped[datetime] = mapped_column(nullable=True)
     reminder_time: Mapped[datetime] = mapped_column(nullable=True)
     recurrence: Mapped[str] = mapped_column(nullable=True, default=None)
+    is_reminder_sent: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

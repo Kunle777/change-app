@@ -21,7 +21,11 @@ celery_app.conf.update(
     redis_backend_use_ssl={
         "ssl_cert_reqs": ssl.CERT_NONE,
     },
-    broker_use_ssl={
-        "ssl_cert_reqs": ssl.CERT_NONE,
+from celery.schedules import crontab
+
+celery_app.conf.beat_schedule = {
+    "check-reminders-every-minute": {
+        "task": "app.tasks_celery.check_reminders",
+        "schedule": 60.0,
     },
-)
+}
