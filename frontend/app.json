@@ -11,6 +11,7 @@
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.kunletech.change",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -22,7 +23,8 @@
     "web": {
       "output": "single",
       "favicon": "./assets/images/favicon.png"
-    }
+    },
+    "plugins": ["@react-native-firebase/app", "@react-native-firebase/messaging"]
   },
   "plugins": [
     [

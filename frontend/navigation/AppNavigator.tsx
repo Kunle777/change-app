@@ -1,14 +1,14 @@
-import React from "react";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import LoginScreen from "../screens/LoginScreen";
-import RegisterScreen from "../screens/RegisterScreen";
-import HomeScreen from "../screens/HomeScreen";
+import React from 'react';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import LoginScreen from '../screens/LoginScreen';
+import RegisterScreen from '../screens/RegisterScreen';
+import HomeScreen from '../screens/HomeScreen';
 
 // 1. Define the types for your routes
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
-  Home: undefined; // Pre-defining this for Phase 2!
+  Home: undefined;
 };
 
 // 2. Create the Stack Navigator instance

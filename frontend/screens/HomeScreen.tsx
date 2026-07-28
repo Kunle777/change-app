@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { View, FlatList, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import TaskCard from '../components/TaskCard';
 import { getTasks, createTask, markTaskDone, snoozeTask } from '../services/tasks';
+import { updateFcmToken } from '../services/auth';
+import messaging from '@react-native-firebase/messaging';
 
 type Task = {
   id: string;
@@ -9,12 +11,14 @@ type Task = {
   priority: string;
   status: string;
   due_date?: string;
+  reminder_time?: string;
 };
 
 export default function HomeScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [newTitle, setnewTitle] = useState('');
+  const [newReminderTime, setNewReminderTime] = useState('');
 
   async function loadTasks() {
     setLoading(true);
@@ -30,8 +34,30 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadTasks();
+    registerForPushNotification();
   }, []);
 
+  async function registerForPushNotification() {
+    const authStatus = await messaging().requestPermission();
+    const enabled =
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+    if (!enabled) {
+      console.log('Push notifications permission not granted', authStatus);
+      return;
+    }
+
+    try {
+      const token = await messaging().getToken();
+      if (token) {
+        await updateFcmToken(token);
+        console.log('FCM token registered:', token);
+      }
+    } catch (err) {
+      console.log('registerForPushNotification error:', err);
+    }
+  }
   async function handleDone(taskId: string) {
     await markTaskDone(taskId);
     loadTasks();
@@ -45,8 +71,12 @@ export default function HomeScreen() {
   async function handleCreateTask() {
     if (!newTitle.trim()) return;
     try {
-      await createTask({ title: newTitle.trim() });
+      await createTask({
+        title: newTitle.trim(),
+        reminder_time: newReminderTime ? newReminderTime : undefined,
+      });
       setnewTitle('');
+      setNewReminderTime('');
       loadTasks();
     } catch (err) {
       console.log('createTask error:', err);
@@ -68,6 +98,12 @@ export default function HomeScreen() {
         placeholder="New task.."
         value={newTitle}
         onChangeText={setnewTitle}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Reminder time (YYYY-MM-DDTHH:MM)"
+        value={newReminderTime}
+        onChangeText={setNewReminderTime}
       />
       <TouchableOpacity onPress={handleCreateTask} style={styles.addButton}>
         <Text>Add Task</Text>

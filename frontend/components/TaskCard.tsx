@@ -6,6 +6,7 @@ type Task = {
   priority: string;
   status: string;
   due_date?: string;
+  reminder_time?: string;
 };
 
 type TaskCardProps = {
@@ -22,6 +23,11 @@ export default function TaskCard({ task, onDone, onSnooze }: TaskCardProps) {
     <View style={[styles.card, isOverdue && styles.overdueCard]}>
       <Text style={styles.title}>{task.title}</Text>
       <Text style={styles.priority}>{task.priority}</Text>
+      {task.reminder_time ? (
+        <Text style={styles.reminder}>
+          Reminder: {new Date(task.reminder_time).toLocaleString()}
+        </Text>
+      ) : null}
 
       <TouchableOpacity onPress={onDone} style={styles.doneButton}>
         <Text>Done</Text>
@@ -46,6 +52,7 @@ const styles = StyleSheet.create({
   overdueCard: { borderColor: 'red', borderWidth: 2 },
   title: { fontSize: 16, fontWeight: '600' },
   priority: { fontSize: 12, color: '#888' },
+  reminder: { fontSize: 12, color: '#555', marginTop: 4 },
   doneButton: { marginTop: 8, padding: 8, backgroundColor: '#333', borderRadius: 6 },
   snoozeButton: { marginTop: 4, padding: 8, backgroundColor: '#ccc', borderRadius: 6 },
 });
