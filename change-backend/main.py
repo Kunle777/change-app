@@ -1,19 +1,24 @@
+import logging
+import time
+
 from fastapi import Depends, FastAPI, Request
-from app.database import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from app.users.models import User
-from app.users.routers import router as users_router
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from app.users.security import limiter
 from slowapi.util import get_remote_address
-from app.tasks.routers import router as tasks_router
-import logging
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+from app.database import get_db
+from app.braindump.routers import router as braindump_router
+from app.tasks.routers import router as tasks_router
+from app.users.models import User
+from app.users.routers import router as users_router
+from app.users.security import limiter
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("change_backend")
 app = FastAPI()
 
 app.add_middleware(
@@ -26,7 +31,22 @@ app.add_middleware(
 
 app.include_router(users_router)
 app.include_router(tasks_router)
+app.include_router(braindump_router)
 
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+    logger.info(
+        "%s %s -> %s in %.2fms",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 
 app.state.limiter = limiter

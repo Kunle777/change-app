@@ -4,7 +4,8 @@ from datetime import datetime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import func, ForeignKey, Enum
 from app.database import Base
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.users.models import User
 
 class PriorityEnum(enum.Enum):
     low = 1
@@ -31,3 +32,4 @@ class Task(Base):
     recurrence: Mapped[str] = mapped_column(nullable=True, default=None)
     is_reminder_sent: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    user: Mapped[User] = relationship("User", foreign_keys=[user_id], primaryjoin="Task.user_id == User.id")

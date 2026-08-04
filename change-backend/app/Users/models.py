@@ -7,8 +7,11 @@ from app.database import Base
 
 
 def _ensure_auth_users_reference(metadata) -> None:
-    if any(table.name == "users" and getattr(table, "schema", None) == "auth" for table in metadata.sorted_tables):
-        return
+    try:
+        if any(table.name == "users" and getattr(table, "schema", None) == "auth" for table in metadata.sorted_tables):
+            return
+    except Exception:
+        pass
 
     Table(
         "users",

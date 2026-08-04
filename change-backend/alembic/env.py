@@ -40,6 +40,7 @@ config.set_main_option("sqlalchemy.url", db_url)
 from app.database import Base
 from app.users.models import User
 from app.tasks.models import Task
+from app.braindump.models import BrainDump
 
 target_metadata = Base.metadata
 
