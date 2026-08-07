@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.braindump.routers import router as braindump_router
+from app.checkins.routers import router as checkins_router
 from app.tasks.routers import router as tasks_router
 from app.users.models import User
 from app.users.routers import router as users_router
@@ -32,6 +33,7 @@ app.add_middleware(
 app.include_router(users_router)
 app.include_router(tasks_router)
 app.include_router(braindump_router)
+app.include_router(checkins_router)
 
 
 @app.middleware("http")
