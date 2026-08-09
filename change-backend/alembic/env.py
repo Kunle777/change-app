@@ -41,7 +41,7 @@ from app.database import Base
 from app.users.models import User, UserTier
 from app.tasks.models import Task
 from app.braindump.models import BrainDump
-from app.ai.models import AIUsageLogs
+from app.ai.models import AIUsageLog  # noqa: F401
 from app.checkins.models import CheckInType
 
 target_metadata = Base.metadata

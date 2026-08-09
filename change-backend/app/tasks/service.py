@@ -4,6 +4,8 @@ from sqlalchemy import select, and_
 from app.tasks.models import Task
 from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate
 from datetime import datetime, timedelta,timezone
+from app.ai import gemini
+
 
 async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUID):
     db_task = Task(
@@ -88,3 +90,20 @@ async def get_due_reminders(db: AsyncSession):
         )
     )
     return result.scalars().all()
+
+async def breakdown_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
+    task = await get_task_by_id(db, task_id, user_id)
+    if task is  None:
+        raise ValueError("Task not found ")
+
+
+    prompt = (
+        f"Break the following task into 3-6 small, concrete, actionable steps. "
+        f"Task title: {task.title}\n"
+        f"Task description: {task.description or 'No description provided'}\n"
+        f"Respond with ONLY a JSON array of strings, each string one step. "
+        f"No extra text, no markdown formatting."
+    )
+   
+    steps = gemini.generate_structured(prompt)
+    return steps

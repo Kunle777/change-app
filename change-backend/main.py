@@ -17,6 +17,7 @@ from app.tasks.routers import router as tasks_router
 from app.users.models import User
 from app.users.routers import router as users_router
 from app.users.security import limiter
+from app.ai.routers import router as ai_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("change_backend")
@@ -34,7 +35,7 @@ app.include_router(users_router)
 app.include_router(tasks_router)
 app.include_router(braindump_router)
 app.include_router(checkins_router)
-
+app.include_router(ai_router)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):

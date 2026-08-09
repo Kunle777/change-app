@@ -36,3 +36,19 @@ async def convert_dump_route(dump_id: uuid.UUID, db=Depends(get_db), current_use
     if result is None:
         raise HTTPException(status_code=404, detail="Brain dump not found")
     return result
+
+@router.post("/{task_id}/breakdown", response_model=list[str])
+async def breakdown_task_route(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await ai_service.check_usage(db, current_user.id)
+
+    try:
+        steps = await service.breakdown_task(db, task_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    await ai_service.increment_usage(db, current_user.id)
+    return steps

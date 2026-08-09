@@ -14,7 +14,6 @@ async def create_brain_dump(db: AsyncSession, brain_dump: BrainDumpCreate, user_
         user_id=user_id,
         content=brain_dump.content,
         is_converted=False,
-        created_at=datetime.now(timezone.utc)
     )
     db.add(db_brain_dump)
     await db.commit()
