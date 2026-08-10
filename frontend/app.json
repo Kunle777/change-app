@@ -8,10 +8,11 @@
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "package": "com.kunletech.change",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -24,20 +25,20 @@
       "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
-    "plugins": ["@react-native-firebase/app", "@react-native-firebase/messaging"]
-  },
-  "plugins": [
-    [
-      "expo-splash-screen",
-      {
-        "backgroundColor": "#208AEF",
-        "image": "./assets/images/splash-icon.png",
-        "imageWidth": 76
-      }
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#208AEF",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
+        }
+      ]
     ],
-    "expo-secure-store"
-  ],
-  "experiments": {
-    "reactCompiler": true
+    "experiments": {
+      "reactCompiler": true
+    }
   }
 }
