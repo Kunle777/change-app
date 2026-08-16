@@ -1,8 +1,9 @@
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 from app.tasks.models import PriorityEnum, StatusEnum
+from app.tasks.models import RecurrenceEnum
 
 class TaskCreate(BaseModel):
     title: str
@@ -11,7 +12,7 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     due_date: Optional[datetime] = None
     reminder_time: Optional[datetime] = None
-    recurrence: Optional[str] = None
+    recurrence: Optional[RecurrenceEnum] = None
 
 class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -33,5 +34,5 @@ class TaskUpdate(BaseModel):  #Everything is optional with none has default so u
     description: Optional[str] = None
     due_date: Optional[datetime] = None
     reminder_time: Optional[datetime] = None
-    recurrence: Optional[str] = None
+    recurrence: Optional[RecurrenceEnum] = None
 

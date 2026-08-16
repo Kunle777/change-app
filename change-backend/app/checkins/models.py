@@ -23,5 +23,6 @@ class CheckIn(Base):
     mood: Mapped[Optional[int]] = mapped_column(nullable=True)
     goal_today: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reflection: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    goal_status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)

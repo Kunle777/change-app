@@ -16,6 +16,10 @@ class FcmTokenUpdate(BaseModel):
     token: str
 
 
+class ToggleCheckinsRequest(BaseModel):
+    enabled: bool
+
+
 # All register/login/refresh/forgot-password/reset-password routes have been
 # retired — Supabase Auth handles these client-side via the SDK.
 
@@ -39,3 +43,14 @@ async def patch_fcm_token(
 ):
     updated_user = await update_fcm_token(db, current_user, data.token)
     return {"id": str(updated_user.id), "fcm_token": updated_user.fcm_token}
+
+
+@router.patch("/me/checkins-toggle")
+async def toggle_checkins(
+    payload: ToggleCheckinsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_user.checkins_enabled = payload.enabled
+    await db.commit()
+    return {"checkins_enabled": current_user.checkins_enabled}

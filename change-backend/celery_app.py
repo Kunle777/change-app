@@ -30,4 +30,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks_celery.check_reminders",
         "schedule": crontab(minute="*"),
     },
+    "spawn-recurring-tasks-hourly": {
+        "task": "app.tasks_celery.spawn_recurring_tasks",
+        "schedule": crontab(minute=0),
+    },
 }

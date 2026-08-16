@@ -1,11 +1,11 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
-from app.tasks.models import Task
+from sqlalchemy import select, and_, or_
+from app.tasks.models import Task, StatusEnum, RecurrenceEnum
 from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate
 from datetime import datetime, timedelta,timezone
 from app.ai import gemini
-
+from sqlalchemy.orm import selectinload
 
 async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUID):
     db_task = Task(
@@ -17,6 +17,7 @@ async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUI
         due_date=task_data.due_date,
         reminder_time=task_data.reminder_time,
         recurrence=task_data.recurrence
+    
     )
     db.add(db_task)
     await db.commit()
@@ -24,11 +25,19 @@ async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUI
     return db_task
 
 async def get_tasks_for_user(db: AsyncSession, user_id: uuid.UUID):
-    result = await db.execute(select(Task).where(Task.user_id == user_id))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    result = await db.execute(select(Task).where(Task.user_id == user_id).or_(
+        Task.status != "completed",
+        Task.completed_at >= cutoff
+    ).options(selectinload(Task.user)))
     return result.scalars().all()
 
 async def get_task_by_id(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
-    result = await db.execute(select(Task).where(Task.id == task_id, Task.user_id == user_id))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    result = await db.execute(select(Task).where(Task.id == task_id, Task.user_id == user_id).or_(
+        Task.status != "completed",
+        Task.completed_at >= cutoff
+    ).options(selectinload(Task.user)))
     return result.scalar_one_or_none()
     
 async def update_task(db: AsyncSession, task_id: uuid.UUID, task_data: TaskUpdate, user_id: uuid.UUID):
@@ -59,7 +68,7 @@ async def snooze_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
     if not db_task:
         return None
 
-    db_task.reminder_time = datetime.utcnow() + timedelta(minutes=10)
+    db_task.reminder_time = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     await db.commit()
     await db.refresh(db_task)
@@ -67,7 +76,7 @@ async def snooze_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
 
 
 async def get_overdue_tasks(db: AsyncSession, user_id: uuid.UUID):
-    current_time = datetime.utcnow()
+    current_time = datetime.now(timezone.utc)
     result = await db.execute(
         select(Task).where(
             and_(
@@ -107,3 +116,28 @@ async def breakdown_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUI
    
     steps = gemini.generate_structured(prompt)
     return steps
+
+async def get_completed_recurring_tasks(db: AsyncSession):
+    result = await db.execute(
+        select(Task).where(
+            Task.status == StatusEnum.completed,
+            Task.completed_at.isnot(None),
+            Task.recurrence.isnot(None),
+            Task.recurrence != RecurrenceEnum.none,
+            Task.recurrence_processed == False,
+        )
+    )
+    return result.scalars().all()
+
+
+async def mark_task_completed(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
+    task = await get_task_by_id(db, task_id, user_id)
+    if not task:
+        return None
+
+    task.status = "completed"
+    task.completed_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(task)
+    return task

@@ -37,3 +37,11 @@ async def get_checkin_history_route(
     limit: int = 20
 ):
     return await service.get_checkin_history(db, current_user.id, limit)
+
+
+@router.get("/today-status")
+async def get_today_status_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await service.get_todays_checkin_status(db, current_user)

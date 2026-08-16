@@ -30,7 +30,7 @@ async def delete_dump_route(dump_id: uuid.UUID, db=Depends(get_db), current_user
         raise HTTPException(status_code=404, detail="Brain dump not found")
     return {"message": "Deleted successfully"}
 
-@router.post("/{dump_id}/convert", response_model=TaskResponseModel)
+@router.post("/{dump_id}/convert", response_model=list[TaskResponseModel])
 async def convert_dump_route(dump_id: uuid.UUID, db=Depends(get_db), current_user=Depends(get_current_user)):
     result = await service.convert_to_task(db, dump_id, current_user.id)
     if result is None:

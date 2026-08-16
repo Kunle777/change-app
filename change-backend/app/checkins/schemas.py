@@ -13,6 +13,7 @@ class MorningCheckInCreate(CheckInCreate):
 
 class EveningCheckInCreate(CheckInCreate):
     reflection: Optional[str] = None
+    goal_status: Optional[str] = None
 
 class CheckInResponse(BaseModel):
         model_config = ConfigDict(from_attributes=True)
@@ -22,5 +23,6 @@ class CheckInResponse(BaseModel):
         mood: Optional[int]
         goal_today: Optional[str]
         reflection: Optional[str]
+        goal_status: Optional[str]
         ai_summary: Optional[str]
         created_at: datetime
