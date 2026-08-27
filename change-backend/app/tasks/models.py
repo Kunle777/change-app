@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import func, ForeignKey, Enum
+from sqlalchemy import func, ForeignKey, Enum, String
 from app.database import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.users.models import User
@@ -36,7 +36,7 @@ class Task(Base):
     description: Mapped[str] = mapped_column(nullable=True)
     due_date: Mapped[datetime] = mapped_column(nullable=True)
     reminder_time: Mapped[datetime] = mapped_column(nullable=True)
-    recurrence: Mapped[RecurrenceEnum] = mapped_column(Enum(RecurrenceEnum), nullable=True, default=None)
+    recurrence: Mapped[str] = mapped_column(String(), nullable=True, default=None)
     is_reminder_sent: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
     recurrence_processed: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

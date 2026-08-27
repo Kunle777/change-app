@@ -1,7 +1,7 @@
 import os
 from google import genai
 import json
-from google.genai import types
+from google.genai import types # type: ignore
 
 
 _client: genai.Client | None = None

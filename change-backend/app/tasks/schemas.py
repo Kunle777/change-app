@@ -1,7 +1,7 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from uuid import UUID
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional
 from app.tasks.models import PriorityEnum, StatusEnum
 from app.tasks.models import RecurrenceEnum
 
@@ -19,20 +19,24 @@ class TaskResponse(BaseModel):
     id: UUID
     user_id: UUID
     title: str
-    priority: PriorityEnum
-    status: StatusEnum
+    priority: str
+    status: str
     description: Optional[str]
     due_date: Optional[datetime]
     reminder_time: Optional[datetime]
     recurrence: Optional[str]
     created_at: datetime
-    
-class TaskUpdate(BaseModel):  #Everything is optional with none has default so users can update thier task without being forced to fill a field
-    title:Optional[str] = None
+
+    @field_validator('priority', 'status', mode='before')
+    @classmethod
+    def enum_to_name(cls, v):
+        return v.name if hasattr(v, 'name') else str(v)
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
     priority: Optional[PriorityEnum] = None
     status: Optional[StatusEnum] = None
     description: Optional[str] = None
     due_date: Optional[datetime] = None
     reminder_time: Optional[datetime] = None
     recurrence: Optional[RecurrenceEnum] = None
-

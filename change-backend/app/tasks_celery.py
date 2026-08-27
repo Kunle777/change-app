@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from celery_app import celery_app
-from app.database import AsyncSessionLocal
+from app.database import AsyncSessionLocal, AsyncSession
 from app.tasks.models import Task, RecurrenceEnum
 from app.tasks.schemas import TaskCreate
 from app.tasks.service import get_completed_recurring_tasks, create_task
@@ -37,14 +37,14 @@ def check_reminders():
     asyncio.run(_check_reminders_async())
 
 
-async def _spawn_recurring_async():
-    async with AsyncSessionLocal() as db:
-        tasks = await get_completed_recurring_tasks(db)
-        for task in tasks:
-            base = task.completed_at.replace(tzinfo=None) if task.completed_at.tzinfo else task.completed_at
-            if task.recurrence == RecurrenceEnum.daily:
+async def _spawn_recurring_async(db: AsyncSession):
+        completed_recurring =  await get_completed_recurring_tasks(db)
+
+        for tasks in completed_recurring:
+            base = tasks.completed_at.replace(tzinfo=None) if tasks.completed_at.tzinfo else tasks.completed_at,
+            if tasks.recurrence == RecurrenceEnum.daily:
                 next_due = base + relativedelta(days=1)
-            elif task.recurrence == RecurrenceEnum.weekly:
+            elif tasks.recurrence == RecurrenceEnum.weekly:
                 next_due = base + relativedelta(weeks=1)
             else:  # monthly
                 next_due = base + relativedelta(months=1)
@@ -52,22 +52,27 @@ async def _spawn_recurring_async():
             await create_task(
                 db,
                 TaskCreate(
-                    title=task.title,
-                    priority=task.priority,
-                    description=task.description,
-                    recurrence=task.recurrence,
+                    title=tasks.title,
+                    priority=tasks.priority,
+                    description=tasks.description,
+                    recurrence=tasks.recurrence,
                     due_date=next_due,
                 ),
-                task.user_id,
+                tasks.user_id,
             )
-            task.recurrence_processed = True
+            tasks.recurrence_processed = True
 
         await db.commit()
 
 
+async def _spawn_recurring_tasks_async():
+    async with AsyncSessionLocal() as db:
+        await _spawn_recurring_async(db)
+
+
 @celery_app.task
-def spawn_recurring_tasks():
-    asyncio.run(_spawn_recurring_async())
+def spawn_recurring_task_job():
+    asyncio.run(_spawn_recurring_tasks_async())
 
 
 @celery_app.task
