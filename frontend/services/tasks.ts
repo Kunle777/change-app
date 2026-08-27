@@ -1,11 +1,5 @@
 import { api } from './api';
-import { supabase } from './supabase';
-
-async function getAuthHeader() {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return { Authorization: `Bearer ${token}` };
-}
+import { getAuthHeader } from './supabase';
 export async function getTasks() {
   const headers = await getAuthHeader();
   const response = await api.get('/api/tasks', { headers });
@@ -58,5 +52,17 @@ export async function markTaskDone(taskId: string) {
 export async function snoozeTask(taskId: string) {
   const headers = await getAuthHeader();
   const response = await api.post(`/api/tasks/${taskId}/snooze`, null, { headers });
+  return response.data;
+}
+
+export async function getTaskById(taskId: string) {
+  const headers = await getAuthHeader(); // however your existing functions get this
+  const response = await api.get(`/api/tasks/${taskId}`, { headers });
+  return response.data;
+}
+
+export async function breakdownTask(taskId: string) {
+  const headers = await getAuthHeader();
+  const response = await api.post(`/api/tasks/${taskId}/breakdown`, {}, { headers });
   return response.data;
 }

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
+import { getAuthHeader, supabase } from './supabase';
 
 function getApiBaseUrl() {
   const isWeb = typeof window !== 'undefined' && typeof window.location !== 'undefined';
@@ -19,7 +20,7 @@ function getApiBaseUrl() {
   }
 
   // Use the development machine LAN IP so a physical device can reach the backend
-  return 'http://10.150.124.217:8000';
+  return 'http://10.180.101.217:8000';
 }
 
 const baseURL = getApiBaseUrl();
@@ -34,3 +35,22 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const config = error.config as (typeof error.config & { _authRetry?: boolean }) | undefined;
+    if (error.response?.status !== 401 || !config || config._authRetry) throw error;
+
+    config._authRetry = true;
+    config.headers = await getAuthHeader(true);
+    try {
+      return await api.request(config);
+    } catch (retryError: any) {
+      if (retryError.response?.status === 401) {
+        await supabase.auth.signOut();
+      }
+      throw retryError;
+    }
+  },
+);

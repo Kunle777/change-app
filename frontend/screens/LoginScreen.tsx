@@ -19,7 +19,7 @@ export default function LoginScreen({ navigation }: Props) {
     if (authError) {
       setError(authError.message);
     } else {
-      navigation.navigate('Home');
+      navigation.navigate('MainTabs');
     }
     setLoading(false);
   };
@@ -33,6 +33,7 @@ export default function LoginScreen({ navigation }: Props) {
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
+        placeholderTextColor="#999"
       />
       <TextInput
         style={styles.input}
@@ -40,6 +41,7 @@ export default function LoginScreen({ navigation }: Props) {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        placeholderTextColor="#999"
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
@@ -47,6 +49,9 @@ export default function LoginScreen({ navigation }: Props) {
       </TouchableOpacity>
       <TouchableOpacity onPress={() => navigation.navigate('Register')}>
         <Text style={{ marginTop: 16, textAlign: 'center' }}>Don't have an account? Register</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+        <Text style={{ marginTop: 12, textAlign: 'center', color: '#555' }}>Forgot password?</Text>
       </TouchableOpacity>
     </View>
   );

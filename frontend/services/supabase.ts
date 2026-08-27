@@ -19,3 +19,39 @@ export const supabase = createClient(
     },
   },
 );
+
+let refreshPromise: ReturnType<typeof supabase.auth.refreshSession> | null = null;
+
+export async function getAuthHeader(forceRefresh = false): Promise<{ Authorization: string; 'Content-Type': string }> {
+  const { data, error } = await supabase.auth.getSession();
+  let session = data.session;
+
+  if (error) throw error;
+
+  const expiresAt = session?.expires_at ?? 0;
+  const isExpiringSoon = expiresAt <= Math.floor(Date.now() / 1000) + 60;
+
+  if (session && (forceRefresh || isExpiringSoon)) {
+    refreshPromise ??= supabase.auth.refreshSession();
+    const pendingRefresh = refreshPromise;
+    const refreshed = await pendingRefresh.finally(() => {
+      if (refreshPromise === pendingRefresh) refreshPromise = null;
+    });
+    if (refreshed.error) {
+      throw refreshed.error;
+    }
+    session = refreshed.data.session;
+  }
+
+  const token = session?.access_token;
+  if (!token) throw new Error('No authenticated session available. Please log in again.');
+  if (session?.expires_at && session.expires_at <= Math.floor(Date.now() / 1000)) {
+    await supabase.auth.signOut();
+    throw new Error('Authenticated session expired. Please log in again.');
+  }
+
+  return {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+}

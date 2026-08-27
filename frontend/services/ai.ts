@@ -1,14 +1,5 @@
-import { supabase } from './supabase';
+import { getAuthHeader } from './supabase';
 import { API_BASE_URL } from './api';
-
-async function getAuthHeader() {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-}
 
 export async function sendChatMessage(message: string) {
   const headers = await getAuthHeader();

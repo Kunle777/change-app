@@ -1,0 +1,61 @@
+export const MORNING_PROMPTS = [
+  "What's the smallest possible version of the thing you're avoiding?",
+  'Who do you become if you actually do this today, not just think about it?',
+  'What conversation have you been rehearsing in your head instead of having out loud?',
+  'If this went badly, what would actually happen? Say the real answer, not the scary one.',
+  "What's costing you more right now — doing the hard thing, or carrying it around unfinished?",
+  'Pick the one task that, if done, makes the rest of today easier.',
+  "What would you do in the next ten minutes if you couldn't fail?",
+  "Name the thing you keep telling yourself you'll 'start tomorrow.' Start it for two minutes now.",
+  "What's one thing today that future-you would thank you for?",
+  "Who's waiting on you to reach out first?",
+  "What decision have you been avoiding because you don't want to disappoint someone?",
+  "What's the version of today where you don't wait until you 'feel ready'?",
+  'Where have you been playing it safe when the safe thing is actually the harder cost?',
+  "Say the thing you've been avoiding saying — even just to yourself, one sentence.",
+  "What would 'good enough for now' look like, instead of waiting for perfect?",
+];
+
+export const ANTI_PROCRASTINATION_PROMPTS = [
+  "You don't have to finish it. You just have to start it for two minutes.",
+  "What's the tiniest first physical step — not the whole task, just the first move?",
+  "Open the document. That's it. That's the whole instruction.",
+  "The task feels big because you're looking at all of it at once. Look at the first inch.",
+  "What are you actually avoiding — the task, or how you'll feel doing it?",
+  'Unfinished things take up more space in your head than finished ones. Close one loop.',
+  'Do the annoying one first. Everything after it feels easier by comparison.',
+  "Set a timer for five minutes. You're allowed to stop after. You probably won't want to.",
+  'The version of this task in your head is worse than the real one. Go look at the real one.',
+  "You're not behind. You're just about to start.",
+  "What's one email, one message, one click that moves this forward?",
+  "Perfect is the reason it's still not done. What's the rough version look like?",
+  'The waiting is the expensive part, not the doing.',
+  'Break it in half. Then break that half in half. Start with the smallest piece.',
+];
+
+export const EVENING_LOW_MOOD_PROMPTS = [
+  "Step outside for two minutes, even just to your doorway. Don't think, just go.",
+  "Text one person 'thinking of you' — no explanation needed.",
+  "What's one small thing that went right today, even a boring one?",
+  "Is the thought you're having right now a fact, or a feeling wearing a fact's clothes?",
+  'Put on one song you actually like and let it play all the way through.',
+  'Stand up and change rooms. Sometimes the day needs a different chair.',
+  'What would you say to a friend who told you they felt exactly like this?',
+  'Name one thing today that was hard. You did it anyway. That counts.',
+  "What's one thing, however small, you're glad happened today?",
+  "If today was genuinely hard, it's allowed to have been hard. That's not a verdict on tomorrow.",
+  "What's the kindest, most accurate thing you could tell yourself right now?",
+  "Message someone you haven't spoken to in a while. Just 'hey, how are you.'",
+  "Name one thing you're looking forward to, even something tiny.",
+];
+
+export const EVENING_FINE_MOOD_PROMPTS = [
+  "What's one thing today that you'd want to remember a year from now?",
+  'What went better than expected today?',
+  'Who made today a little easier, even in a small way?',
+  "What's one thing you're proud of from today, no matter how small?",
+  'If you could bottle one part of today, which part would it be?',
+  "What's something you learned today — about the work, or about yourself?",
+  "Name one thing you're looking forward to tomorrow.",
+  "What's a small win today you might otherwise forget to count?",
+];

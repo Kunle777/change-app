@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, Alert, RefreshControl,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { createBrainDump, getBrainDumps, convertBrainDump } from '../services/braindump';
 
 type Dump = {
@@ -10,6 +11,7 @@ type Dump = {
   content: string;
   is_converted: boolean;
   created_at: string;
+  converted_tasks?: { title: string; priority: string }[];
 };
 
 export default function BrainDumpScreen() {
@@ -50,8 +52,11 @@ export default function BrainDumpScreen() {
     setConvertingId(id);
     try {
       const tasks = await convertBrainDump(id);
-      Alert.alert('Converted', `Created ${tasks.length} task${tasks.length === 1 ? '' : 's'}`);
-      await loadDumps();
+      setDumps(prev => prev.map(d =>
+        d.id === id
+          ? { ...d, is_converted: true, converted_tasks: tasks.map((t: any) => ({ title: t.title, priority: t.priority })) }
+          : d
+      ));
     } catch (err: any) {
       Alert.alert('Error', err.message);
     } finally {
@@ -92,7 +97,12 @@ export default function BrainDumpScreen() {
           <View style={styles.dumpRow}>
             <Text style={styles.dumpText}>{item.content}</Text>
             {item.is_converted ? (
-              <Text style={styles.convertedLabel}>✓ Converted to task</Text>
+              <View>
+                <Text style={styles.convertedLabel}>✓ Converted to tasks:</Text>
+                {item.converted_tasks?.map((t, i) => (
+                  <Text key={i} style={styles.taskTitle}>• {t.title} ({t.priority})</Text>
+                ))}
+              </View>
             ) : (
               <TouchableOpacity
                 onPress={() => handleConvert(item.id)}
@@ -125,6 +135,7 @@ const styles = StyleSheet.create({
   empty: { color: '#aaa', textAlign: 'center', marginTop: 40, fontSize: 14 },
   dumpRow: { borderBottomWidth: 1, borderColor: '#eee', paddingVertical: 12 },
   dumpText: { fontSize: 14, marginBottom: 6, color: '#222' },
-  convertedLabel: { fontSize: 12, color: '#999' },
+  convertedLabel: { fontSize: 12, color: '#999', marginBottom: 2 },
+  taskTitle: { fontSize: 12, color: '#3a6b4a', marginLeft: 4 },
   convertLink: { fontSize: 12, color: '#3a6b4a', fontWeight: '600' },
 });
