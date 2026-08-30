@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -169,9 +169,13 @@ export default function HomeScreen() {
         ...(due_date ? { due_date } : {}),
       });
       if (reminder_time && createdTask?.id) {
-        const n = await import('../services/notifications').catch(() => null);
-        if (n && typeof n.scheduleTaskReminder === 'function')
-          await n.scheduleTaskReminder(createdTask.id, createdTask.title, new Date(reminder_time));
+        try {
+          const n = await import('../services/notifications');
+          if (typeof n.scheduleTaskReminder === 'function')
+            await n.scheduleTaskReminder(createdTask.id, createdTask.title, new Date(reminder_time));
+        } catch {
+          // notifications unavailable in this build environment — task still saved
+        }
       }
       setnewTitle('');
       setReminderDate(null);
@@ -258,16 +262,17 @@ export default function HomeScreen() {
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           minimumDate={new Date()}
-          onChange={(e: DateTimePickerEvent, date?: Date) => {
+          onValueChange={(date?: Date) => {
             setShowDatePicker(false);
-            if (e.type === 'set' && date) {
+            if (date) {
               setReminderDate((prev) => {
                 const base = prev || new Date();
                 date.setHours(base.getHours(), base.getMinutes());
-                return date;
+                return new Date(date);
               });
             }
           }}
+          onDismiss={() => setShowDatePicker(false)}
         />
       )}
       {showTimePicker && (
@@ -275,14 +280,15 @@ export default function HomeScreen() {
           value={reminderDate || new Date()}
           mode="time"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(e: DateTimePickerEvent, time?: Date) => {
+          onValueChange={(time?: Date) => {
             setShowTimePicker(false);
-            if (e.type === 'set' && time && reminderDate) {
+            if (time && reminderDate) {
               const updated = new Date(reminderDate);
-              updated.setHours(time.getHours(), time.getMinutes());
+              updated.setHours(time.getHours(), time.getMinutes(), 0, 0);
               setReminderDate(updated);
             }
           }}
+          onDismiss={() => setShowTimePicker(false)}
         />
       )}
       <TouchableOpacity onPress={handleCreateTask} style={styles.addButton}>

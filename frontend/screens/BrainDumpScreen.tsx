@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList,
-  StyleSheet, Alert, RefreshControl,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { createBrainDump, getBrainDumps, convertBrainDump } from '../services/braindump';
+import VoiceCaptureButton from '../components/VoiceCaptureButton';
 
 type Dump = {
   id: string;
@@ -52,11 +59,17 @@ export default function BrainDumpScreen() {
     setConvertingId(id);
     try {
       const tasks = await convertBrainDump(id);
-      setDumps(prev => prev.map(d =>
-        d.id === id
-          ? { ...d, is_converted: true, converted_tasks: tasks.map((t: any) => ({ title: t.title, priority: t.priority })) }
-          : d
-      ));
+      setDumps((prev) =>
+        prev.map((d) =>
+          d.id === id
+            ? {
+                ...d,
+                is_converted: true,
+                converted_tasks: tasks.map((t: any) => ({ title: t.title, priority: t.priority })),
+              }
+            : d,
+        ),
+      );
     } catch (err: any) {
       Alert.alert('Error', err.message);
     } finally {
@@ -79,6 +92,7 @@ export default function BrainDumpScreen() {
         placeholder="Dump anything on your mind..."
         multiline
       />
+      <VoiceCaptureButton onTranscript={(text) => setContent(text)} />
       <TouchableOpacity
         style={[styles.saveButton, (!content.trim() || saving) && styles.saveButtonDisabled]}
         onPress={handleSave}
@@ -92,7 +106,9 @@ export default function BrainDumpScreen() {
         keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{ paddingTop: 16 }}
-        ListEmptyComponent={<Text style={styles.empty}>Nothing dumped yet. Brain full? Let it out.</Text>}
+        ListEmptyComponent={
+          <Text style={styles.empty}>Nothing dumped yet. Brain full? Let it out.</Text>
+        }
         renderItem={({ item }) => (
           <View style={styles.dumpRow}>
             <Text style={styles.dumpText}>{item.content}</Text>
@@ -100,7 +116,9 @@ export default function BrainDumpScreen() {
               <View>
                 <Text style={styles.convertedLabel}>✓ Converted to tasks:</Text>
                 {item.converted_tasks?.map((t, i) => (
-                  <Text key={i} style={styles.taskTitle}>• {t.title} ({t.priority})</Text>
+                  <Text key={i} style={styles.taskTitle}>
+                    • {t.title} ({t.priority})
+                  </Text>
                 ))}
               </View>
             ) : (
@@ -123,12 +141,20 @@ export default function BrainDumpScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#fff' },
   input: {
-    borderWidth: 1, borderColor: '#ccc', borderRadius: 10,
-    padding: 12, minHeight: 70, textAlignVertical: 'top', fontSize: 14,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 70,
+    textAlignVertical: 'top',
+    fontSize: 14,
   },
   saveButton: {
-    backgroundColor: '#333', borderRadius: 10, padding: 12,
-    alignItems: 'center', marginTop: 8,
+    backgroundColor: '#333',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+    marginTop: 8,
   },
   saveButtonDisabled: { backgroundColor: '#999' },
   saveButtonText: { color: '#fff', fontWeight: '600' },

@@ -42,6 +42,14 @@
           "icon": "./assets/notification-icon.png",
           "color": "#333333"
         }
+      ],
+      "./plugins/withNotificationManifestFix.js",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Change to use the microphone for voice capture in Brain Dump.",
+          "speechRecognitionPermission": "Allow Change to use speech recognition to transcribe your Brain Dump."
+        }
       ]
     ],
     "experiments": {
