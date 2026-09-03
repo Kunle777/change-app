@@ -52,7 +52,12 @@ export async function scheduleTaskReminder(
   title: string,
   reminderDate: Date,
 ): Promise<string | null> {
+  if (Platform.OS === 'web' || !Device.isDevice) return null;
+  if (!(reminderDate instanceof Date) || !Number.isFinite(reminderDate.getTime())) return null;
   if (reminderDate.getTime() <= Date.now()) return null;
+
+  const permissionGranted = await requestNotificationPermissions();
+  if (!permissionGranted) return null;
 
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {

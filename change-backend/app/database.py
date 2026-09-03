@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import declarative_base
 
 backend_dir = Path(__file__).resolve().parents[1]
@@ -15,6 +16,7 @@ if not DATABASE_URL:
 
 engine = create_async_engine(
     DATABASE_URL,
+    poolclass=NullPool,
     pool_pre_ping=True,
     echo=False,
     connect_args={"statement_cache_size": 0}

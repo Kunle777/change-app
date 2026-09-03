@@ -1,20 +1,31 @@
 // plugins/withNotificationManifestFix.js
-const { withAndroidManifest } = require('@expo/config-plugins');
+const { withDangerousMod } = require('@expo/config-plugins');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = function withNotificationManifestFix(config) {
-  return withAndroidManifest(config, (config) => {
-    const application = config.modResults.manifest.application[0];
-    const metaData = application['meta-data'] || [];
+  return withDangerousMod(config, [
+    'android',
+    async (config) => {
+      const manifestPath = path.join(
+        config.modRequest.platformProjectRoot,
+        'app/src/main/AndroidManifest.xml',
+      );
 
-    const target = metaData.find(
-      (item) =>
-        item.$['android:name'] === 'com.google.firebase.messaging.default_notification_color',
-    );
+      let manifest = fs.readFileSync(manifestPath, 'utf-8');
 
-    if (target) {
-      target.$['tools:replace'] = 'android:resource';
-    }
+      const target =
+        '<meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_icon_color"/>';
 
-    return config;
-  });
+      const replacement =
+        '<meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_icon_color" tools:replace="android:resource"/>';
+
+      if (manifest.includes(target)) {
+        manifest = manifest.replace(target, replacement);
+        fs.writeFileSync(manifestPath, manifest, 'utf-8');
+      }
+
+      return config;
+    },
+  ]);
 };

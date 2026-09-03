@@ -20,18 +20,19 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Africa/Lagos",
     enable_utc=True,
+    broker_use_ssl={"ssl_cert_reqs": ssl.CERT_REQUIRED},
     redis_backend_use_ssl={
-        "ssl_cert_reqs": ssl.CERT_NONE,
+        "ssl_cert_reqs": ssl.CERT_REQUIRED,
     }
 )
 
 celery_app.conf.beat_schedule = {
     "check-reminders-every-minute": {
         "task": "app.tasks_celery.check_reminders",
-        "schedule": crontab(minute="60"),
+        "schedule": crontab(minute="*"),
     },
     "spawn-recurring-tasks-hourly": {
-        "task": "app.tasks_celery.spawn_recurring_tasks",
-        "schedule": crontab(minute=3600),
+        "task": "app.tasks_celery.spawn_recurring_task_job",
+        "schedule": crontab(minute=0, hour="*"),
     },
 }

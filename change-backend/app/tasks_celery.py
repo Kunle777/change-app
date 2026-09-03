@@ -5,29 +5,26 @@ from celery_app import celery_app
 from app.database import AsyncSessionLocal, AsyncSession
 from app.tasks.models import Task, RecurrenceEnum
 from app.tasks.schemas import TaskCreate
-from app.tasks.service import get_completed_recurring_tasks, create_task
+from app.tasks.service import get_completed_recurring_tasks, create_task, get_due_reminders
 from sqlalchemy import select, and_
-
-
-async def get_due_reminders(db):
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    result = await db.execute(
-        select(Task).where(
-            and_(
-                Task.reminder_time <= now,
-                Task.is_reminder_sent == False,
-                Task.status != "completed",
-            )
-        )
-    )
-    return result.scalars().all()
+from fcm import send_push_notification
 
 
 async def _check_reminders_async():
     async with AsyncSessionLocal() as db:
         due_tasks = await get_due_reminders(db)
         for task in due_tasks:
-            print(f"REMINDER: Task '{task.title}' is due now for user {task.user_id}")
+            if task.user and task.user.fcm_token:
+                try:
+                    send_push_notification(
+                        task.user.fcm_token,
+                        title="Task Reminder",
+                        body=task.title,
+                    )
+                except Exception as e:
+                    print(f"FCM send failed for task {task.id}: {e}")
+            else:
+                print(f"No FCM token for task {task.id}, user={task.user_id}")
             task.is_reminder_sent = True
         await db.commit()
 

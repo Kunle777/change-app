@@ -172,9 +172,13 @@ export default function HomeScreen() {
         try {
           const n = await import('../services/notifications');
           if (typeof n.scheduleTaskReminder === 'function')
-            await n.scheduleTaskReminder(createdTask.id, createdTask.title, new Date(reminder_time));
-        } catch {
-          // notifications unavailable in this build environment — task still saved
+            await n.scheduleTaskReminder(
+              createdTask.id,
+              createdTask.title,
+              new Date(reminder_time),
+            );
+        } catch (err) {
+          console.log('scheduleTaskReminder error:', err);
         }
       }
       setnewTitle('');
@@ -262,13 +266,14 @@ export default function HomeScreen() {
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           minimumDate={new Date()}
-          onValueChange={(date?: Date) => {
+          onValueChange={(_event, date) => {
             setShowDatePicker(false);
-            if (date) {
+            if (date instanceof Date && !isNaN(date.getTime())) {
               setReminderDate((prev) => {
                 const base = prev || new Date();
-                date.setHours(base.getHours(), base.getMinutes());
-                return new Date(date);
+                const next = new Date(date);
+                next.setHours(base.getHours(), base.getMinutes());
+                return next;
               });
             }
           }}
@@ -280,9 +285,9 @@ export default function HomeScreen() {
           value={reminderDate || new Date()}
           mode="time"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onValueChange={(time?: Date) => {
+          onValueChange={(_event, time) => {
             setShowTimePicker(false);
-            if (time && reminderDate) {
+            if (time instanceof Date && !isNaN(time.getTime()) && reminderDate) {
               const updated = new Date(reminderDate);
               updated.setHours(time.getHours(), time.getMinutes(), 0, 0);
               setReminderDate(updated);

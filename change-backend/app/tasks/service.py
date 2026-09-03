@@ -108,10 +108,12 @@ async def get_overdue_tasks(db: AsyncSession, user_id: uuid.UUID):
 async def get_due_reminders(db: AsyncSession):
     now = datetime.utcnow()
     result = await db.execute(
-        select(Task).where(
-                Task.reminder_time <= now,
-                Task.is_reminder_sent == False,
-                Task.status != StatusEnum.completed
+        select(Task)
+        .options(selectinload(Task.user))
+        .where(
+            Task.reminder_time <= now,
+            Task.is_reminder_sent == False,
+            Task.status != StatusEnum.completed,
         )
     )
     return result.scalars().all()
