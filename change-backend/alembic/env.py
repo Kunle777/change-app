@@ -44,6 +44,7 @@ from app.braindump.models import BrainDump
 from app.ai.models import AIUsageLog  # noqa: F401
 from app.wins.models import Win  # noqa: F401
 from app.checkins.models import CheckInType
+from app.savings.models import SavingsVault
 
 target_metadata = Base.metadata
 

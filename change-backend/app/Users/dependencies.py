@@ -39,4 +39,5 @@ async def get_current_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User profile not found",
         )
+    user.email_from_token = payload.get("email")  
     return user

@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import func, ForeignKey, Enum, String
+from sqlalchemy import DateTime, func, ForeignKey, Enum, String
 from app.database import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.users.models import User
@@ -34,11 +34,11 @@ class Task(Base):
     priority: Mapped[PriorityEnum] = mapped_column(Enum(PriorityEnum), nullable=False, server_default="low")
     status: Mapped[StatusEnum] = mapped_column(Enum(StatusEnum), nullable=False, server_default="pending")
     description: Mapped[str] = mapped_column(nullable=True)
-    due_date: Mapped[datetime] = mapped_column(nullable=True)
-    reminder_time: Mapped[datetime] = mapped_column(nullable=True)
+    due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    reminder_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     recurrence: Mapped[str] = mapped_column(String(), nullable=True, default=None)
     is_reminder_sent: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
     recurrence_processed: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user: Mapped[User] = relationship("User", foreign_keys=[user_id], primaryjoin="Task.user_id == User.id")
-    completed_at: Mapped[datetime] = mapped_column(nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
