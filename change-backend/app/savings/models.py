@@ -19,6 +19,14 @@ class PendingDepositStatus(str, enum.Enum):
     expired = "expired"
 
 
+class TransactionType(str, enum.Enum):
+    deposit = "deposit"
+    withdrawal = "withdrawal"
+    # break_vault / emergency_withdrawal fee variants added in Day 8
+
+
+
+
 class SavingsVault(Base):
     __tablename__ = "savings_vaults"
 
@@ -67,5 +75,27 @@ class PendingDeposit(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    vault = relationship("SavingsVault")
+
+
+class SavingsTransaction(Base):
+    __tablename__ = "savings_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    vault_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("savings_vaults.id"), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    type: Mapped[TransactionType] = mapped_column(
+        SQLEnum(TransactionType, name="transaction_type"), nullable=False
+    )
+
+    # This is the idempotency anchor — a unique constraint means the DB
+    # itself refuses a second row with the same reference, so double-crediting
+    # is impossible even if the webhook handler's own check has a bug.
+    paystack_reference: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
 
     vault = relationship("SavingsVault")
