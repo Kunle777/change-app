@@ -8,9 +8,11 @@ from app.database import Base
 
 class VaultStatus(str, enum.Enum):
     active = "active"
-    locked_complete = "locked_complete"   # reached lock_until, funds available
-    broken = "broken"                     # user broke it early (3.5% fee taken)
-    withdrawn = "withdrawn"                # fully paid out
+    awaiting_bank_details = "awaiting_bank_details"
+    payout_initiated = "payout_initiated"
+    withdrawn = "withdrawn"
+    payout_failed = "payout_failed"
+    broken = "broken"
 
 
 class PendingDepositStatus(str, enum.Enum):
@@ -25,6 +27,11 @@ class TransactionType(str, enum.Enum):
     # break_vault / emergency_withdrawal fee variants added in Day 8
 
 
+
+class TransactionStatus(str, enum.Enum):
+    pending = "pending"
+    success = "success"
+    failed = "failed"
 
 
 class SavingsVault(Base):
@@ -97,5 +104,11 @@ class SavingsTransaction(Base):
     paystack_reference: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+    status: Mapped[TransactionStatus] = mapped_column(
+    SQLEnum(TransactionStatus, name="transaction_status"),
+    nullable=False,
+    server_default=TransactionStatus.success.value,  # deposits are already-confirmed by the time we insert them
+)
+
 
     vault = relationship("SavingsVault")

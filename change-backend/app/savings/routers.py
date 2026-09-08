@@ -16,7 +16,7 @@ from app.savings.webhook_security import verify_paystack_signature
 from app.savings.models import SavingsTransaction, TransactionType, PendingDepositStatus
 from app.savings.service import check_milestones
 from app.savings.notifications import notify_deposit_confirmed, notify_milestone_reached
-
+from app.savings.models import TransactionStatus
 
 
 router = APIRouter(prefix="/api/savings", tags=["savings"])
@@ -178,3 +178,48 @@ async def create_vault(
     await db.refresh(vault)
     return vault
 
+
+
+@router.post("/webhooks/paystack-transfers")
+async def paystack_transfer_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    raw_body = await request.body()
+    signature = request.headers.get("x-paystack-signature")
+
+    if not verify_paystack_signature(raw_body, signature):
+        raise HTTPException(401, "Invalid signature")
+
+    payload = await request.json()
+    event = payload.get("event")
+
+    if event not in ("transfer.success", "transfer.failed", "transfer.reversed"):
+        return {"status": "ignored"}
+
+    data = payload["data"]
+    reference = data["reference"]
+
+    result = await db.execute(
+        select(SavingsTransaction).where(
+            SavingsTransaction.paystack_reference == reference
+        ).with_for_update()
+    )
+    transaction = result.scalar_one_or_none()
+
+    if not transaction:
+        return {"status": "untracked_reference", "reference": reference}
+
+    if transaction.status != TransactionStatus.pending:
+        return {"status": "already_processed", "reference": reference}  # idempotency
+
+    if event == "transfer.success":
+        transaction.status = TransactionStatus.success
+        await db.commit()
+        # TODO: notify_payout_confirmed(user, vault, amount) — same pattern as Day 4's deposit notification
+        return {"status": "success", "reference": reference}
+
+    else:  # transfer.failed or transfer.reversed
+        transaction.status = TransactionStatus.failed
+        vault = await db.get(SavingsVault, transaction.vault_id)
+        vault.current_amount += transaction.amount  # automatic refund
+        await db.commit()
+        # TODO: notify_payout_failed(user, vault, amount)
+        return {"status": event, "reference": reference}

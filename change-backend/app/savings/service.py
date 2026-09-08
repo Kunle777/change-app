@@ -1,12 +1,18 @@
-# app/savings/service.py
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
-from app.savings.models import SavingsVault
-
-
+from fastapi import HTTPException
+from sqlalchemy import select
+from app.savings.models import (
+    SavingsVault,
+    SavingsTransaction,
+    TransactionStatus,
+    TransactionType,
+)
 from app.savings.paystack_client import paystack_request, PaystackError
 from app.users.models import User
 from sqlalchemy.ext.asyncio import AsyncSession
+
 
 
 
@@ -133,7 +139,7 @@ async def ensure_user_has_dva(user: User,email:str, db: AsyncSession) -> dict:
 
     return dva
 
-# app/savings/service.py — additions
+
 
 async def resolve_account_number(account_number: str, bank_code: str) -> dict:
     """
@@ -151,8 +157,6 @@ async def resolve_account_number(account_number: str, bank_code: str) -> dict:
         "account_name": data["account_name"],
         "account_number": data["account_number"],
     }
-
-# app/savings/service.py — additions
 
 async def create_transfer_recipient(account_number: str, bank_code: str, account_name: str) -> str:
     """
@@ -174,3 +178,73 @@ async def create_transfer_recipient(account_number: str, bank_code: str, account
         },
     )
     return data["recipient_code"]
+
+
+
+async def initiate_transfer(
+    db: AsyncSession,
+    user_id: str,
+    vault_id: str,
+    amount: Decimal,
+    recipient_code: str,
+    reason: str,
+) -> SavingsTransaction:
+    """
+    Debits the vault and commits BEFORE calling Paystack — the row lock is
+    held only for the brief DB operation, never across the external HTTP
+    call. This avoids a slow/stuck Paystack response holding a lock that
+    blocks every other operation on this vault. The tradeoff: a small
+    window where the vault shows debited before Paystack has confirmed —
+    acceptable, and self-correcting via the webhook's automatic refund
+    path if the transfer actually fails.
+    """
+    vault_result = await db.execute(
+        select(SavingsVault).where(
+            SavingsVault.id == vault_id, SavingsVault.user_id == user_id
+        ).with_for_update()
+    )
+    vault = vault_result.scalar_one_or_none()
+    if not vault:
+        raise HTTPException(404, "Vault not found")
+    if vault.current_amount < amount:
+        raise HTTPException(400, "Insufficient vault balance")
+
+    vault.current_amount -= amount
+
+    transfer_reference = f"payout_{uuid.uuid4().hex[:20]}"
+
+    transaction = SavingsTransaction(
+        vault_id=vault.id,
+        user_id=user_id,
+        amount=amount,
+        type=TransactionType.withdrawal,
+        status=TransactionStatus.pending,
+        paystack_reference=transfer_reference,
+    )
+    db.add(transaction)
+    await db.commit()  # lock released here — before any network call
+
+    # Now, outside the lock, actually call Paystack
+    amount_kobo = int(amount * 100)
+    try:
+        await paystack_request(
+            "POST",
+            "/transfer",
+            json={
+                "source": "balance",
+                "amount": amount_kobo,
+                "recipient": recipient_code,
+                "reason": reason,
+                "reference": transfer_reference,
+            },
+        )
+    except PaystackError:
+        # The API call itself failed to even dispatch — refund immediately,
+        # don't wait for a webhook that will never arrive for a call that
+        # never succeeded.
+        vault.current_amount += amount
+        transaction.status = TransactionStatus.failed
+        await db.commit()
+        raise HTTPException(502, "Payout could not be initiated. Your funds remain in the vault.")
+
+    return transaction
