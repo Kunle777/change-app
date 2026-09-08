@@ -2,7 +2,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from app.savings.models import SavingsVault
-# app/savings/service.py — additions
+
 
 from app.savings.paystack_client import paystack_request, PaystackError
 from app.users.models import User
@@ -132,3 +132,45 @@ async def ensure_user_has_dva(user: User,email:str, db: AsyncSession) -> dict:
     await db.commit()
 
     return dva
+
+# app/savings/service.py — additions
+
+async def resolve_account_number(account_number: str, bank_code: str) -> dict:
+    """
+    Confirms an account number is real and returns the actual account holder's
+    name as registered with the bank. This MUST happen before attaching a bank
+    account to a user — never trust a user-typed name over what the bank itself
+    reports, since that's exactly the gap a scammer would exploit (typing
+    someone else's account number with their own fabricated 'account name').
+    """
+    data = await paystack_request(
+        "GET",
+        f"/bank/resolve?account_number={account_number}&bank_code={bank_code}",
+    )
+    return {
+        "account_name": data["account_name"],
+        "account_number": data["account_number"],
+    }
+
+# app/savings/service.py — additions
+
+async def create_transfer_recipient(account_number: str, bank_code: str, account_name: str) -> str:
+    """
+    Paystack requires a 'recipient' object before any transfer can be sent —
+    you can't transfer directly to a raw account number. Returns recipient_code,
+    stored once per user (a payout destination change means creating a NEW
+    recipient, not mutating this one — Paystack recipients are treated as
+    immutable references, matching how customer_code already works on the deposit side).
+    """
+    data = await paystack_request(
+        "POST",
+        "/transferrecipient",
+        json={
+            "type": "nuban",
+            "name": account_name,
+            "account_number": account_number,
+            "bank_code": bank_code,
+            "currency": "NGN",
+        },
+    )
+    return data["recipient_code"]

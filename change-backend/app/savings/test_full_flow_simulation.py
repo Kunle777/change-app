@@ -23,7 +23,7 @@ async def setup():
             user_id=user.id,
             name="Test Vault",
             target_amount=Decimal("10000"),
-            current_amount=Decimal("4000"),  # pre-seeded, so this deposit crosses a milestone
+            current_amount=Decimal("5000"),  # pre-seeded, so this deposit crosses a milestone
             lock_until=datetime.now(timezone.utc) + timedelta(days=7),
             milestone_tier="short",
         )
@@ -35,7 +35,7 @@ async def setup():
         pending = PendingDeposit(
             vault_id=vault.id,
             user_id=user.id,
-            expected_amount=Decimal("1000"),  # deposit that pushes 4000 -> 5000 = 50%
+            expected_amount=Decimal("1000"),  # deposit that pushes 5000 -> 6000 = 60%
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
         )
         db.add(pending)
@@ -73,7 +73,7 @@ async def main():
     # Confirm the result
     async with AsyncSessionLocal() as db:
         vault = await db.get(SavingsVault, vault_id)
-        print(f"current_amount = {vault.current_amount}")  # expect 5000
-        print(f"milestones_reached = {vault.milestones_reached}")  # expect [50]
+        print(f"current_amount = {vault.current_amount}")  # expect 6000
+        print(f"milestones_reached = {vault.milestones_reached}")  # expect [60]
 
 asyncio.run(main())

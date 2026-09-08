@@ -21,6 +21,7 @@ from app.ai.routers import router as ai_router
 from app.wins.routers import router as wins_router
 from app.savings.routers import router as savings_router
 
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("change_backend")
 app = FastAPI()
@@ -39,7 +40,7 @@ app.include_router(braindump_router)
 app.include_router(checkins_router)
 app.include_router(ai_router)
 app.include_router(wins_router)
-app.include_router(savings_router, prefix="/api")
+app.include_router(savings_router)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):

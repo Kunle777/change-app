@@ -155,17 +155,22 @@ async def create_vault(
     db: AsyncSession = Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
+    lock_until = payload.lock_until
+    if lock_until.tzinfo is None or lock_until.utcoffset() is None:
+        lock_until = lock_until.replace(tzinfo=timezone.utc)
+    else:
+        lock_until = lock_until.astimezone(timezone.utc)
 
-    if payload.lock_until <= now:
+    if lock_until <= now:
         raise HTTPException(400, "lock_until must be in the future")
 
-    tier = determine_milestone_tier(now, payload.lock_until)
+    tier = determine_milestone_tier(now, lock_until)
 
     vault = SavingsVault(
         user_id=current_user.id,
         name=payload.name,
         target_amount=payload.target_amount,
-        lock_until=payload.lock_until,
+        lock_until=lock_until,
         milestone_tier=tier,
     )
     db.add(vault)

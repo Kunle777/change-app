@@ -35,3 +35,7 @@ class User(Base):
     dva_account_number: Mapped[str | None] = mapped_column(String, nullable=True)
     dva_bank_name: Mapped[str | None] = mapped_column(String, nullable=True)
     dva_account_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    paystack_recipient_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    payout_bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    payout_account_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    payout_account_name: Mapped[str | None] = mapped_column(String, nullable=True)  # from Paystack's own verification, not user-typed
