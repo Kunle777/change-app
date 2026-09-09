@@ -1,17 +1,22 @@
+import os
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from app.savings.models import (
     SavingsVault,
     SavingsTransaction,
     TransactionStatus,
     TransactionType,
+    VaultStatus,
+    PlatformRevenue,
 )
 from app.savings.paystack_client import paystack_request, PaystackError
 from app.users.models import User
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import AsyncSessionLocal
+from datetime import timezone, timedelta
 
 
 
@@ -248,3 +253,148 @@ async def initiate_transfer(
         raise HTTPException(502, "Payout could not be initiated. Your funds remain in the vault.")
 
     return transaction
+
+
+async def check_and_process_matured_vaults():
+    """
+    Celery Beat entrypoint — same shape as get_due_reminders: no user_id
+    parameter, since this is a system-wide scheduled check, not a per-request call.
+    """
+    async with AsyncSessionLocal() as db:
+        now = datetime.now(timezone.utc)
+        result = await db.execute(
+            select(SavingsVault).where(
+                SavingsVault.status == VaultStatus.active,
+                SavingsVault.lock_until <= now,
+            )
+        )
+        matured_vaults = result.scalars().all()
+
+        for vault in matured_vaults:
+            await process_single_vault_maturity(db, vault)
+
+
+from app.savings.notifications import notify_add_bank_details, notify_payout_failed
+
+
+
+async def process_single_vault_maturity(db, vault: SavingsVault):
+    user = await db.get(User, vault.user_id)
+
+    if not user.paystack_recipient_code:
+        vault.status = VaultStatus.awaiting_bank_details
+        await db.commit()
+        await notify_add_bank_details(user, vault)
+        return
+
+    vault.status = VaultStatus.payout_initiated
+    await db.commit()
+
+    try:
+        await initiate_transfer(
+            db=db,
+            user_id=str(user.id),
+            vault_id=str(vault.id),
+            amount=vault.current_amount,
+            recipient_code=user.paystack_recipient_code,
+            reason=f"Vault maturity payout: {vault.name}",
+        )
+    except HTTPException:
+        vault.status = VaultStatus.payout_failed
+        await db.commit()
+        await notify_payout_failed(user, vault, vault.current_amount)
+
+
+async def validate_customer_identity(
+    customer_code: str, first_name: str, last_name: str,
+    bvn: str, bank_code: str, account_number: str
+) -> dict:
+    """
+    Kicks off Paystack's BVN validation — this call itself only confirms
+    the request was accepted, NOT that identity is verified. The real
+    result arrives later via the customeridentification.success/failed
+    webhook. Never treat this function's return value as proof of KYC.
+    """
+    data = await paystack_request(
+        "POST",
+        f"/customer/{customer_code}/identification",
+        json={
+            "country": "NG",
+            "type": "bank_account",
+            "account_number": account_number,
+            "bank_code": bank_code,
+            "bvn": bvn,
+            "first_name": first_name,
+            "last_name": last_name,
+        },
+    )
+    return data
+
+DAILY_WITHDRAWAL_CAP = Decimal("500000")  # ₦500,000 per 24h, across all vaults
+
+
+async def check_daily_withdrawal_cap(db: AsyncSession, user_id: str, requested_amount: Decimal) -> None:
+    """
+    Sums this user's withdrawals in the trailing 24h and rejects if the new
+    request would exceed the cap. Deliberately checked BEFORE the atomic
+    balance lock in initiate_transfer — this is a velocity/fraud guardrail,
+    a separate concern from "does the vault have enough money."
+    """
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    result = await db.execute(
+        select(func.coalesce(func.sum(SavingsTransaction.amount), 0)).where(
+            SavingsTransaction.user_id == user_id,
+            SavingsTransaction.type == TransactionType.withdrawal,
+            SavingsTransaction.status != TransactionStatus.failed,
+            SavingsTransaction.created_at >= since,
+        )
+    )
+    total_withdrawn_24h = result.scalar()
+
+    if total_withdrawn_24h + requested_amount > DAILY_WITHDRAWAL_CAP:
+        raise HTTPException(429, f"Daily withdrawal limit of ₦{DAILY_WITHDRAWAL_CAP:,.2f} exceeded")
+
+
+
+PLATFORM_RECIPIENT_CODE = os.environ["PLATFORM_RECIPIENT_CODE"]
+# ^ Created ONCE, manually, ahead of time: your own KunleTech business bank
+#   account, registered as a Paystack transfer recipient via the same
+#   create_transfer_recipient() function — but never touching user flow code.
+
+
+async def withdraw_platform_revenue(db: AsyncSession) -> dict:
+    """
+    Sweeps all not-yet-withdrawn PlatformRevenue rows to KunleTech's own
+    registered business account — a single Transfer, batched, run
+    periodically (weekly/monthly), NEVER automatically per-transaction.
+    Batching is deliberate: it keeps the audit trail as one clean
+    reference per sweep rather than tiny scattered transfers, and it
+    means you control exactly when revenue leaves the pool.
+    """
+    result = await db.execute(
+        select(PlatformRevenue).where(PlatformRevenue.withdrawn == False)
+    )
+    unwithdrawn = result.scalars().all()
+    if not unwithdrawn:
+        return {"status": "nothing_to_withdraw"}
+
+    total = sum(Decimal(str(r.amount)) for r in unwithdrawn)
+    reference = f"revenue_sweep_{uuid.uuid4().hex[:20]}"
+
+    await paystack_request(
+        "POST", "/transfer",
+        json={
+            "source": "balance", "amount": int(total * 100),
+            "recipient": PLATFORM_RECIPIENT_CODE,
+            "reason": f"Platform revenue sweep — {len(unwithdrawn)} fee(s)",
+            "reference": reference,
+        },
+    )
+
+    for row in unwithdrawn:
+        row.withdrawn = True
+        row.withdrawal_reference = reference
+    await db.commit()
+
+    return {"status": "initiated", "total": str(total), "reference": reference, "count": len(unwithdrawn)}
+

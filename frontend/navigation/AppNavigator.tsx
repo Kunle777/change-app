@@ -1,6 +1,4 @@
 import React from 'react';
-import { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
@@ -18,6 +16,13 @@ import TaskDetailScreen from '../screens/TaskDetailScreen';
 import CalendarScreen from '../screens/CalenderScreen';
 import { Ionicons } from '@expo/vector-icons';
 import WinLogScreen from '../screens/WinLogScreen';
+import PasscodeSetupScreen from '../screens/PasscodeSetupScreen';
+import BankAccountSetupScreen from '../screens/BankAccountSetupScreen';
+import CreateVaultScreen from '../screens/CreateVaultScreen';
+import SavingsScreen from '../screens/SavingsScreen';
+import DepositScreen from '../screens/DepositScreen';
+import WithdrawalPinSetupScreen from '../screens/WithdrawalPinSetupScreen';
+import WithdrawScreen from '../screens/WithdrawScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -30,6 +35,13 @@ export type RootStackParamList = {
   CheckIn: { type: 'morning' | 'evening' };
   Calendar: undefined;
   WinLog: undefined;
+  PasscodeSetup: undefined;
+  BankAccountSetup: undefined;
+  CreateVault: undefined;
+  Savings: undefined;
+  Deposit: { vaultId: string; vaultName: string };
+  WithdrawalPinSetup: undefined;
+  Withdraw: { vaultId: string; vaultName: string };
 };
 
 export type MainTabParamList = {
@@ -42,14 +54,6 @@ export type MainTabParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
-
-function SavingsComingSoon() {
-  return (
-    <View style={styles.centered}>
-      <Text style={styles.comingSoon}>Savings Vault - coming soon</Text>
-    </View>
-  );
-}
 
 function MainTabs() {
   return (
@@ -84,10 +88,9 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Savings"
-        component={SavingsComingSoon}
+        component={SavingsScreen}
         options={{
-          tabBarIcon: ({ size }) => <Ionicons name="wallet" color="#ccc" size={size} />,
-          tabBarButton: (props) => <TouchableOpacity {...(props as any)} style={{ opacity: 0.4 }} disabled />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="wallet" color={color} size={size} />,
         }}
       />
       <Tab.Screen
@@ -143,11 +146,13 @@ export default function AppNavigator() {
         component={WinLogScreen}
         options={{ headerShown: true, title: 'Wins' }}
       />
+      <Stack.Screen name="PasscodeSetup" component={PasscodeSetupScreen} options={{ headerShown: true, title: 'Passcode' }} />
+      <Stack.Screen name="BankAccountSetup" component={BankAccountSetupScreen} options={{ headerShown: true, title: 'Bank account' }} />
+      <Stack.Screen name="CreateVault" component={CreateVaultScreen} options={{ headerShown: true, title: 'New vault' }} />
+      <Stack.Screen name="Savings" component={SavingsScreen} options={{ headerShown: true, title: 'Savings' }} />
+      <Stack.Screen name="Deposit" component={DepositScreen} options={{ headerShown: true, title: 'Deposit' }} />
+      <Stack.Screen name="WithdrawalPinSetup" component={WithdrawalPinSetupScreen} options={{ headerShown: true, title: 'Withdrawal PIN' }} />
+      <Stack.Screen name="Withdraw" component={WithdrawScreen} options={{ headerShown: true, title: 'Withdraw' }} />
     </Stack.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  comingSoon: { color: '#999', fontSize: 16 },
-});

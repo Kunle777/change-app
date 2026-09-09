@@ -1,5 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
+} from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,9 +28,7 @@ type Task = {
 function getTaskDateKey(task: Task): string | null {
   const raw = task.due_date || task.reminder_time;
   if (!raw) return null;
-  // Normalize: if no timezone suffix, treat as UTC to match backend storage
-  const normalized = raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z';
-  return new Date(normalized).toISOString().split('T')[0];
+  return new Date(raw).toISOString().split('T')[0];
 }
 
 export default function CalendarScreen() {

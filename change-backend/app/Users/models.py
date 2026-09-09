@@ -3,9 +3,16 @@ import uuid
 from datetime import datetime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, DateTime, ForeignKey, Table,Enum as SQLEnum, func
+from sqlalchemy import JSON, String, DateTime, ForeignKey, Table,Enum as SQLEnum, func
 from app.database import Base 
 
+# app/users/models.py — additions
+
+class KYCStatus(str, enum.Enum):
+    unverified = "unverified"
+    pending = "pending"
+    verified = "verified"
+    failed = "failed"
 
 
 class UserTier(str, enum.Enum):
@@ -39,3 +46,9 @@ class User(Base):
     payout_bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
     payout_account_number: Mapped[str | None] = mapped_column(String, nullable=True)
     payout_account_name: Mapped[str | None] = mapped_column(String, nullable=True)  # from Paystack's own verification, not user-typed
+    
+    kyc_status: Mapped[KYCStatus] = mapped_column(
+        SQLEnum(KYCStatus, name="kyc_status"), nullable=False, server_default=KYCStatus.unverified.value
+    )
+    kyc_verified_name: Mapped[str | None] = mapped_column(String, nullable=True)  # set ONLY by the webhook, never directly
+

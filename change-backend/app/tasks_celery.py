@@ -8,6 +8,7 @@ from app.tasks.schemas import TaskCreate
 from app.tasks.service import get_completed_recurring_tasks, create_task, get_due_reminders
 from sqlalchemy import select, and_
 from fcm import send_push_notification
+from app.savings.service import check_and_process_matured_vaults
 
 
 async def _check_reminders_async():
@@ -76,3 +77,7 @@ def spawn_recurring_task_job():
 def say_hello(name: str):
     print(f"Sending hello to {name}")
     return f"Hello, {name}!"
+
+@celery_app.task
+def process_matured_vaults():
+    asyncio.run(check_and_process_matured_vaults())

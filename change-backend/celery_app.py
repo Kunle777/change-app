@@ -35,4 +35,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks_celery.spawn_recurring_task_job",
         "schedule": crontab(minute=0, hour="*"),
     },
+        # ... your existing check_reminders entry stays as-is ...
+    "process-matured-vaults": {
+        "task": "app.savings.tasks_celery.process_matured_vaults",
+        "schedule": crontab(minute="0"),  # hourly, on the hour
+    },
 }
+
+

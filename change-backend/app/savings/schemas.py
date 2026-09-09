@@ -20,3 +20,20 @@ class VaultResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BankAccountSetup(BaseModel):
+    first_name: str
+    last_name: str
+    bvn: str = Field(min_length=11, max_length=11)
+    bank_code: str
+    account_number: str = Field(min_length=10, max_length=10)
+
+
+class BankAccountChangeRequest(BaseModel):
+    withdrawal_pin: str
+    new_bvn: str
+    new_bank_code: str
+    new_account_number: str
+    first_name: str
+    last_name: str

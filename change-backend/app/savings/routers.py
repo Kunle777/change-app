@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone, timedelta
@@ -15,9 +16,22 @@ from sqlalchemy import select
 from app.savings.webhook_security import verify_paystack_signature
 from app.savings.models import SavingsTransaction, TransactionType, PendingDepositStatus
 from app.savings.service import check_milestones
-from app.savings.notifications import notify_deposit_confirmed, notify_milestone_reached
 from app.savings.models import TransactionStatus
-
+from app.savings.notifications import (
+    notify_kyc_failed,
+    notify_kyc_verified,
+    notify_payout_confirmed,
+    notify_payout_failed,
+)
+from app.savings.models import VaultStatus
+from app.users.models import KYCStatus
+from app.users.security import limiter  
+from app.savings.service import initiate_transfer, check_daily_withdrawal_cap, validate_customer_identity, withdraw_platform_revenue
+from app.savings.schemas import BankAccountSetup
+from app.users.security import hash_secret
+from app.users.security import verify_secret
+from app.savings.schemas import BankAccountChangeRequest
+from app.database import AsyncSessionLocal
 
 router = APIRouter(prefix="/api/savings", tags=["savings"])
 
@@ -136,10 +150,10 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
     newly_reached = check_milestones(vault)
     if newly_reached:
         vault.milestones_reached = (vault.milestones_reached or []) + newly_reached
-        
+
     await db.commit()
 
-    
+    from app.savings.notifications import notify_deposit_confirmed, notify_milestone_reached
     await notify_deposit_confirmed(user, vault, amount_naira)
 
     for pct in newly_reached:
@@ -154,6 +168,9 @@ async def create_vault(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if current_user.kyc_status != KYCStatus.verified:
+        raise HTTPException(403, "Identity verification required before creating a vault")
+
     now = datetime.now(timezone.utc)
     lock_until = payload.lock_until
     if lock_until.tzinfo is None or lock_until.utcoffset() is None:
@@ -213,13 +230,196 @@ async def paystack_transfer_webhook(request: Request, db: AsyncSession = Depends
     if event == "transfer.success":
         transaction.status = TransactionStatus.success
         await db.commit()
-        # TODO: notify_payout_confirmed(user, vault, amount) — same pattern as Day 4's deposit notification
+        
+
+    if event == "transfer.success":
+        transaction.status = TransactionStatus.success
+        vault = await db.get(SavingsVault, transaction.vault_id)
+        user = await db.get(User, transaction.user_id)
+        if vault:
+            vault.status = VaultStatus.withdrawn
+            vault.completed_at = datetime.now(timezone.utc)
+        await db.commit()
+        if vault and user:
+            await notify_payout_confirmed(user, vault, transaction.amount)
         return {"status": "success", "reference": reference}
 
-    else:  # transfer.failed or transfer.reversed
+    else:
         transaction.status = TransactionStatus.failed
         vault = await db.get(SavingsVault, transaction.vault_id)
-        vault.current_amount += transaction.amount  # automatic refund
+        user = await db.get(User, transaction.user_id)
+        if vault:
+            vault.current_amount += transaction.amount
+            vault.status = VaultStatus.payout_failed
         await db.commit()
-        # TODO: notify_payout_failed(user, vault, amount)
+        if vault and user:
+            await notify_payout_failed(user, vault, transaction.amount)
         return {"status": event, "reference": reference}
+
+
+@router.post("/webhooks/paystack-identity")
+async def paystack_identity_webhook(
+    request: Request, 
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Handles asynchronous Paystack identity verification (KYC) callbacks.
+    Updates user KYC status and stores the official NIBSS-verified name.
+    """
+    raw_body = await request.body()
+    signature = request.headers.get("x-paystack-signature")
+
+    # 1. Cryptographic HMAC-SHA512 Signature Verification
+    if not verify_paystack_signature(raw_body, signature):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    payload = await request.json()
+    event = payload.get("event")
+
+    # 2. Filter for relevant identification events
+    if event not in ("customeridentification.success", "customeridentification.failed"):
+        return {"status": "ignored"}
+
+    data = payload.get("data", {})
+    customer_code = data.get("customer_code")
+
+    if not customer_code:
+        return {"status": "missing_customer_code"}
+
+    # 3. Lock user row for update to prevent concurrent race conditions
+    user_result = await db.execute(
+        select(User)
+        .where(User.paystack_customer_code == customer_code)
+        .with_for_update()
+    )
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        return {"status": "unknown_customer", "customer_code": customer_code}
+
+    # 4. Idempotency Check — Skip if user is already verified
+    if user.kyc_status == KYCStatus.verified:
+        return {"status": "already_verified", "customer_code": customer_code}
+
+    # 5. Process Verification Outcome
+    if event == "customeridentification.success":
+        first_name = data.get("first_name", "").strip()
+        last_name = data.get("last_name", "").strip()
+        
+        user.kyc_status = KYCStatus.verified
+        user.kyc_verified_name = f"{first_name} {last_name}".strip()
+        
+        await db.commit()
+
+        # Trigger success notification
+        await notify_kyc_verified(user)
+        return {"status": "success", "user_id": str(user.id)}
+
+    else:  # customeridentification.failed
+        reason = data.get("reason", "Submitted identification details could not be validated.")
+        
+        user.kyc_status = KYCStatus.failed
+        await db.commit()
+
+        # Trigger failure notification with reason
+        await notify_kyc_failed(user, reason=reason)
+        return {"status": "failed", "user_id": str(user.id), "reason": reason}
+
+
+
+# app/savings/routers.py — updating request_withdrawal from Day 6
+
+@router.post("/{vault_id}/withdraw")
+@limiter.limit("3/hour")
+async def request_withdrawal(
+    request: Request, vault_id: str, amount: Decimal, withdrawal_pin: str,
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    if not current_user.withdrawal_pin_hash or not verify_secret(withdrawal_pin, current_user.withdrawal_pin_hash):
+        raise HTTPException(401, "Incorrect withdrawal PIN")
+
+    await check_daily_withdrawal_cap(db, str(current_user.id), amount)
+    transaction = await initiate_transfer(
+        db=db, user_id=str(current_user.id), vault_id=vault_id, amount=amount,
+        recipient_code=current_user.paystack_recipient_code, reason="User-requested withdrawal",
+    )
+    return {"status": "initiated", "transaction_id": str(transaction.id)}
+
+
+@router.post("/bank-account/setup")
+async def setup_bank_account(
+    payload: BankAccountSetup,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Customer must exist before identity validation can run against it
+    await ensure_user_has_dva(current_user, current_user.email_from_token, db)
+
+    await validate_customer_identity(
+        customer_code=current_user.paystack_customer_code,
+        first_name=payload.first_name, last_name=payload.last_name,
+        bvn=payload.bvn, bank_code=payload.bank_code,
+        account_number=payload.account_number,
+    )
+
+    current_user.kyc_status = KYCStatus.pending
+    current_user.payout_bank_code = payload.bank_code
+    current_user.payout_account_number = payload.account_number
+    await db.commit()
+
+    return {"status": "pending", "message": "Identity verification in progress — you'll be notified when complete."}
+
+
+
+@router.post("/withdrawal-pin/setup")
+async def setup_withdrawal_pin(
+    pin: str,
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    if not (pin.isdigit() and len(pin) == 6):
+        raise HTTPException(400, "Withdrawal PIN must be exactly 6 digits")
+    current_user.withdrawal_pin_hash = hash_secret(pin)
+    await db.commit()
+    return {"status": "set"}
+
+#
+
+BANK_CHANGE_COOLING_OFF_HOURS = 24
+
+
+from app.savings.notifications import notify_bank_change_requested
+
+@router.post("/bank-account/request-change")
+async def request_bank_account_change(
+    payload: BankAccountChangeRequest,
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    if not current_user.withdrawal_pin_hash or not verify_secret(payload.withdrawal_pin, current_user.withdrawal_pin_hash):
+        raise HTTPException(401, "Incorrect withdrawal PIN")
+
+    unlock_at = datetime.now(timezone.utc) + timedelta(hours=BANK_CHANGE_COOLING_OFF_HOURS)
+
+    current_user.pending_bank_change = {
+        "bvn": payload.new_bvn, "bank_code": payload.new_bank_code,
+        "account_number": payload.new_account_number,
+        "first_name": payload.first_name, "last_name": payload.last_name,
+        "unlock_at": unlock_at.isoformat(),
+    }
+    await db.commit()
+    await notify_bank_change_requested(current_user, unlock_at)
+    return {"status": "pending", "unlock_at": unlock_at}
+
+
+ADMIN_EMAIL = os.environ["ADMIN_EMAIL"]  # add this to your .env — your own email, gates this route
+
+
+@router.post("/admin/withdraw-revenue")
+async def trigger_revenue_withdrawal(
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.email_from_token != ADMIN_EMAIL:
+        raise HTTPException(403, "Not authorized")
+
+    async with AsyncSessionLocal() as db:
+        result = await withdraw_platform_revenue(db)
+    return result

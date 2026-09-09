@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+
 class VaultStatus(str, enum.Enum):
     active = "active"
     awaiting_bank_details = "awaiting_bank_details"
@@ -32,6 +33,7 @@ class TransactionStatus(str, enum.Enum):
     pending = "pending"
     success = "success"
     failed = "failed"
+
 
 
 class SavingsVault(Base):
@@ -112,3 +114,20 @@ class SavingsTransaction(Base):
 
 
     vault = relationship("SavingsVault")
+
+# app/savings/models.py — new table
+
+class PlatformRevenue(Base):
+    __tablename__ = "platform_revenue"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    vault_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("savings_vaults.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)  # "break_fee", later "subscription" etc in Phase 8
+
+    withdrawn: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    withdrawal_reference: Mapped[str | None] = mapped_column(String, nullable=True)  # set when actually swept out
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")

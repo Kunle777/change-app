@@ -54,3 +54,4 @@ async def toggle_checkins(
     current_user.checkins_enabled = payload.enabled
     await db.commit()
     return {"checkins_enabled": current_user.checkins_enabled}
+
