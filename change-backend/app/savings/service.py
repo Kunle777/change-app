@@ -356,7 +356,7 @@ async def check_daily_withdrawal_cap(db: AsyncSession, user_id: str, requested_a
 
 
 
-PLATFORM_RECIPIENT_CODE = os.environ["PLATFORM_RECIPIENT_CODE"]
+PLATFORM_RECIPIENT_CODE = os.getenv("PLATFORM_RECIPIENT_CODE")
 # ^ Created ONCE, manually, ahead of time: your own KunleTech business bank
 #   account, registered as a Paystack transfer recipient via the same
 #   create_transfer_recipient() function — but never touching user flow code.
@@ -371,6 +371,11 @@ async def withdraw_platform_revenue(db: AsyncSession) -> dict:
     reference per sweep rather than tiny scattered transfers, and it
     means you control exactly when revenue leaves the pool.
     """
+    if not PLATFORM_RECIPIENT_CODE:
+        raise RuntimeError(
+            "PLATFORM_RECIPIENT_CODE must be configured before withdrawing platform revenue"
+        )
+
     result = await db.execute(
         select(PlatformRevenue).where(PlatformRevenue.withdrawn == False)
     )

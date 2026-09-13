@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import DateTime, func, ForeignKey, Enum, String
+from sqlalchemy import DateTime, func, ForeignKey, Enum, String, Boolean
 from app.database import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.users.models import User
@@ -42,3 +42,5 @@ class Task(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user: Mapped[User] = relationship("User", foreign_keys=[user_id], primaryjoin="Task.user_id == User.id")
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

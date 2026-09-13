@@ -45,6 +45,7 @@ from app.ai.models import AIUsageLog  # noqa: F401
 from app.wins.models import Win  # noqa: F401
 from app.checkins.models import CheckInType
 from app.savings.models import SavingsVault
+from app.users.entitlements_models import FeatureEntitlements
 
 target_metadata = Base.metadata
 

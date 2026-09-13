@@ -40,3 +40,7 @@ class TaskUpdate(BaseModel):
     due_date: Optional[datetime] = None
     reminder_time: Optional[datetime] = None
     recurrence: Optional[RecurrenceEnum] = None
+
+class TaskReschedule(BaseModel):
+    due_date: datetime | None = None
+    reminder_time: datetime | None = None

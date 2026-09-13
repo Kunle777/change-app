@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.users.models import User
 from app.users.dependencies import get_current_user
-from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate
+from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate, TaskReschedule
 from app.tasks import service
 from app.tasks.models import StatusEnum
 from app.ai import service as ai_service
@@ -107,3 +107,25 @@ async def breakdown_task_route(
 
     await ai_service.increment_usage(db, current_user.id)
     return steps
+
+@router.patch("/{task_id}/reschedule", response_model=TaskResponse)
+async def reschedule_task_route(
+    task_id: uuid.UUID,
+    payload: TaskReschedule,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await service.reschedule_task(
+        db, task_id, current_user.id, payload.due_date, payload.reminder_time
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return result
+
+@router.post("/{task_id}/cancel", response_model=TaskResponse)
+async def cancel(
+    task_id: uuid.UUID,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await service.cancel_task(db, task_id, current_user.id)

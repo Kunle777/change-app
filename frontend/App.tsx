@@ -1,6 +1,5 @@
 import AppNavigator from "./navigation/AppNavigator";
 import { NavigationContainer, useNavigation } from "@react-navigation/native";
-import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useAuthDeepLink } from "./hooks/useAuthDeepLink";
 import { AppState, AppStateStatus } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
@@ -45,11 +44,9 @@ export default function App() {
   }
 
   return (
-    <KeyboardProvider>
-      <NavigationContainer>
-        <AppNavigator />
-        <DeepLinkHandler />
-      </NavigationContainer>
-    </KeyboardProvider>
+    <NavigationContainer>
+      <AppNavigator />
+      <DeepLinkHandler />
+    </NavigationContainer>
   );
 }

@@ -1,9 +1,12 @@
-import firebase_admin
-from firebase_admin import credentials,messaging
+import importlib
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+firebase_admin = importlib.import_module("firebase_admin")
+credentials = importlib.import_module("firebase_admin.credentials")
+messaging = importlib.import_module("firebase_admin.messaging")
 
 cred = credentials.Certificate(os.getenv("FIREBASE_CREDENTIALS_PATH"))
 firebase_admin.initialize_app(cred)

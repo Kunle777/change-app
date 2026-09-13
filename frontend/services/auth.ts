@@ -22,6 +22,13 @@ export async function getProfile(token: string) {
   return response.data;
 }
 
+export async function getCurrentProfile() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (!data.session) throw new Error('No authenticated session available.');
+  return getProfile(data.session.access_token);
+}
+
 export async function updateFcmToken(token: string) {
   const { data } = await supabase.auth.getSession();
   const accessToken = data.session?.access_token;

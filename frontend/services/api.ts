@@ -9,18 +9,20 @@ function getApiBaseUrl() {
     return `${protocol}//${hostname}:8000`;
   }
 
-  const manifest = (Constants as any).manifest || (Constants as any).manifest2;
-  const debuggerHost =
-    manifest && typeof manifest.debuggerHost === 'string'
-      ? manifest.debuggerHost.split(':')[0]
-      : null;
+  const expoConfig = (Constants as any).expoConfig;
+  const legacyManifest = (Constants as any).manifest || (Constants as any).manifest2;
+  const hostUri =
+    expoConfig?.hostUri ||
+    legacyManifest?.extra?.expoClient?.hostUri ||
+    legacyManifest?.debuggerHost;
+  const debuggerHost = typeof hostUri === 'string' ? hostUri.split(':')[0] : null;
 
   if (debuggerHost) {
     return `http://${debuggerHost}:8000`;
   }
 
   // Use the development machine LAN IP so a physical device can reach the backend
-  return 'http://172.28.91.94:8000'; // Replace with your development machine's LAN IP address
+  return 'http://10.152.186.217:8000'; // Replace with your development machine's LAN IP address
 }
 
 const baseURL = getApiBaseUrl();

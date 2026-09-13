@@ -33,3 +33,6 @@ def hash_secret(raw: str) -> str:
 
 def verify_secret(raw: str, hashed: str) -> bool:
     return pwd_context.verify(raw, hashed)
+
+
+

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { supabase } from '../services/supabase';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { signInWithGoogle } from '../services/google_auth';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -11,22 +12,43 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const handleLogin = async () => {
     setLoading(true);
     setError('');
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    if (authError) {
-      setError(authError.message);
-    } else {
-      navigation.navigate('MainTabs');
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError) {
+        setError(authError.message);
+        return;
+      }
+
+      navigation.replace('MainTabs');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to log in. Please try again.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  async function handleGoogleSignIn() {
+    setGoogleLoading(true);
+    try {
+      const session = await signInWithGoogle();
+      if (session) {
+        navigation.replace('MainTabs');
+      }
+    } catch (err: any) {
+      Alert.alert('Sign-in failed', err.message ?? 'Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Change</Text>
+      <Text style={styles.title}>Elvyn</Text>
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -52,6 +74,9 @@ export default function LoginScreen({ navigation }: Props) {
       </TouchableOpacity>
       <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
         <Text style={{ marginTop: 12, textAlign: 'center', color: '#555' }}>Forgot password?</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={handleGoogleSignIn} disabled={googleLoading}>
+        <Text>{googleLoading ? 'Connecting…' : 'Continue with Google'}</Text>
       </TouchableOpacity>
     </View>
   );

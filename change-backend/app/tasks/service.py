@@ -37,7 +37,8 @@ async def get_tasks_for_user(db: AsyncSession, user_id: uuid.UUID):
             Task.user_id == user_id,
             or_(
                 Task.status != StatusEnum.completed,
-                Task.completed_at >= cutoff
+                Task.completed_at >= cutoff,
+                Task.is_deleted == False
             )
         )
     )
@@ -154,6 +155,25 @@ async def mark_task_completed(db: AsyncSession, task_id: uuid.UUID, user_id: uui
         return None
     task.status = StatusEnum.completed
     task.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+async def reschedule_task(db: AsyncSession, task_id, user_id, due_date, reminder_time) -> Task:
+    task = await get_task_by_id(db, task_id, user_id)
+    if due_date is not None:
+        task.due_date = due_date
+    if reminder_time is not None:
+        task.reminder_time = reminder_time
+        task.is_reminder_sent = False  # new time needs its own reminder fire
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+async def cancel_task(db: AsyncSession, task_id, user_id) -> Task:
+    task = await get_task_by_id(db, task_id, user_id)
+    task.is_deleted = True
+    task.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(task)
     return task

@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-nativ
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { supabase } from '../services/supabase';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { getCurrentProfile } from '../services/auth';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
@@ -21,9 +22,12 @@ export default function RegisterScreen({ navigation }: Props) {
 
     setLoading(true);
     setError('');
-    const { error: authError } = await supabase.auth.signUp({ email, password });
+    const { data, error: authError } = await supabase.auth.signUp({ email, password });
     if (authError) {
       setError(authError.message);
+    } else if (data.session) {
+      const profile = await getCurrentProfile();
+      navigation.replace(profile.country_code ? 'MainTabs' : 'CountryConfirm');
     } else {
       navigation.navigate('Login');
     }

@@ -1,200 +1,205 @@
-import { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  ScrollView,
-  Alert,
-} from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
-import { getTaskById, breakdownTask, markTaskDone, snoozeTask } from '../services/tasks';
+import { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { Task } from '../types/task';
+import { getTaskById, breakdownTask } from '../services/tasks';
+import { completeTask, notNowTask, rescheduleTask } from '../services/tasks';
 
-type Nav = NativeStackNavigationProp<RootStackParamList, 'TaskDetail'>;
-type Route = RouteProp<RootStackParamList, 'TaskDetail'>;
+type BreakdownStep = { title: string };
 
-type Task = {
-  id: string;
-  title: string;
-  priority: string;
-  status: string;
-  due_date?: string;
-  reminder_time?: string;
-};
-
-export default function TaskDetailScreen() {
-  const navigation = useNavigation<Nav>();
-  const route = useRoute<Route>();
+export default function TaskDetailScreen({ route, navigation }: any) {
   const { taskId } = route.params;
 
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
-  const [subtasks, setSubtasks] = useState<string[] | null>(null);
-
-  async function loadTask() {
-    setLoading(true);
-    try {
-      const data = await getTaskById(taskId);
-      setTask(data);
-    } catch {
-      Alert.alert('Could not load task');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [steps, setSteps] = useState<BreakdownStep[] | null>(null);
+  const [showNotNowOptions, setShowNotNowOptions] = useState(false);
 
   useEffect(() => {
     loadTask();
   }, [taskId]);
 
+  async function loadTask() {
+    setLoading(true);
+    try {
+      const t = await getTaskById(taskId);
+      setTask(t);
+    } catch (err) {
+      Alert.alert("Couldn't load task", 'Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleMarkDone() {
+    setActionLoading('done');
+    try {
+      const updated = await completeTask(taskId);
+      setTask(updated);
+      navigation.goBack();
+    } catch (err: any) {
+      Alert.alert("Couldn't mark this task as done.", '', [
+        { text: 'Try again', onPress: handleMarkDone },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleNotNow(option: 'later_today' | 'tomorrow') {
+    setActionLoading('not_now');
+    try {
+      const updated = await notNowTask(taskId, option);
+      setTask(updated);
+      setShowNotNowOptions(false);
+      navigation.goBack();
+    } catch (err) {
+      Alert.alert("Couldn't postpone this task.", 'Please try again.');
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleReschedule() {
+    // Wire to your existing date/time picker component here —
+    // once the user picks a date, call:
+    // await rescheduleTask(taskId, newDueDate, newReminderTime)
+    navigation.navigate('RescheduleTask', { taskId });
+  }
+
   async function handleBreakdown() {
     setBreakdownLoading(true);
     try {
       const result = await breakdownTask(taskId);
-      setSubtasks(Array.isArray(result) ? result : result.subtasks);
-    } catch (err: any) {
-      if (err?.response?.status === 429) {
-        Alert.alert('Daily AI limit reached', 'Try again tomorrow.');
-      } else {
-        Alert.alert('Breakdown failed', 'Something went wrong — try again.');
-      }
+      setSteps(result.steps);
+    } catch (err) {
+      Alert.alert("Couldn't break this task down.", 'Please try again.');
     } finally {
       setBreakdownLoading(false);
     }
   }
 
-  async function handleMarkDone() {
-    try {
-      await markTaskDone(taskId);
-      const n = await import('../services/notifications').catch(() => null);
-      if (n) await n.cancelTaskReminder(taskId);
-      navigation.goBack();
-    } catch (err) {
-      console.log('handleMarkDone error:', err);
-    }
-  }
-
-  async function handleSnooze() {
-    try {
-      const updated = await snoozeTask(taskId);
-      setTask(updated);
-    } catch (err) {
-      console.log('handleSnooze error:', err);
-    }
-  }
-
-  if (loading) {
+  if (loading || !task) {
     return (
-      <View style={styles.centered}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator />
       </View>
     );
   }
 
-  if (!task) {
-    return (
-      <View style={styles.centered}>
-        <Text>Task not found.</Text>
-      </View>
-    );
-  }
+  const isOverdue =
+    task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date();
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>{task.title}</Text>
+    <ScrollView style={{ flex: 1, padding: 20 }}>
+      <TouchableOpacity onPress={() => navigation.goBack()}>
+        <Text>← Back</Text>
+      </TouchableOpacity>
 
-      <View style={styles.row}>
-        <Text style={styles.label}>Priority</Text>
-        <Text style={styles.value}>{task.priority}</Text>
-      </View>
-      <View style={styles.row}>
-        <Text style={styles.label}>Status</Text>
-        <Text style={styles.value}>{task.status}</Text>
-      </View>
-      {task.due_date && (
-        <View style={styles.row}>
-          <Text style={styles.label}>Due</Text>
-          <Text style={styles.value}>{new Date(task.due_date).toLocaleDateString()}</Text>
-        </View>
-      )}
-      {task.reminder_time && (
-        <View style={styles.row}>
-          <Text style={styles.label}>Reminder</Text>
-          <Text style={styles.value}>{new Date(task.reminder_time).toLocaleString()}</Text>
-        </View>
-      )}
+      <Text style={{ fontSize: 22, fontWeight: '700', marginTop: 16 }}>{task.title}</Text>
 
-      {!subtasks && (
-        <TouchableOpacity
-          style={styles.breakdownButton}
-          onPress={handleBreakdown}
-          disabled={breakdownLoading}
+      {task.category && (
+        <View
+          style={{
+            alignSelf: 'flex-start',
+            backgroundColor: '#EEF0FF',
+            borderRadius: 12,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            marginTop: 8,
+          }}
         >
-          {breakdownLoading ? (
-            <ActivityIndicator color="#333" />
-          ) : (
-            <Text style={styles.breakdownButtonText}>✨ Break down task</Text>
-          )}
-        </TouchableOpacity>
-      )}
-
-      {subtasks && (
-        <View style={styles.subtasksBox}>
-          <Text style={styles.subtasksLabel}>Suggested steps</Text>
-          {subtasks.map((step, i) => (
-            <Text key={i} style={styles.subtaskItem}>
-              {i + 1}. {step}
-            </Text>
-          ))}
+          <Text style={{ fontSize: 12, color: '#4F46E5' }}>{task.category}</Text>
         </View>
       )}
 
-      <TouchableOpacity style={styles.doneButton} onPress={handleMarkDone}>
-        <Text style={styles.doneButtonText}>Mark Done</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={handleSnooze}>
-        <Text style={styles.snoozeLink}>Snooze</Text>
-      </TouchableOpacity>
+      <View style={{ marginTop: 12 }}>
+        {task.due_date && (
+          <Text style={{ color: '#666' }}>📅 {new Date(task.due_date).toLocaleDateString()}</Text>
+        )}
+        {task.reminder_time && (
+          <Text style={{ color: '#666', marginTop: 2 }}>
+            🕐 {new Date(task.reminder_time).toLocaleTimeString()}
+          </Text>
+        )}
+        {isOverdue && <Text style={{ color: '#B45309', marginTop: 4, fontSize: 12 }}>Overdue</Text>}
+      </View>
+
+      {task.description && (
+        <View style={{ marginTop: 20 }}>
+          <Text style={{ fontWeight: '600', marginBottom: 4 }}>Description</Text>
+          <Text style={{ color: '#444' }}>{task.description}</Text>
+        </View>
+      )}
+
+      <View style={{ marginTop: 20, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 16 }}>
+        <TouchableOpacity onPress={handleBreakdown} disabled={breakdownLoading}>
+          <Text style={{ fontWeight: '600' }}>
+            {breakdownLoading ? 'Thinking…' : '✨ Make it easier'}
+          </Text>
+          <Text style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
+            Break this task into smaller steps if it feels overwhelming.
+          </Text>
+        </TouchableOpacity>
+
+        {steps && (
+          <View style={{ marginTop: 12 }}>
+            {steps.map((s, i) => (
+              <Text key={i} style={{ marginBottom: 6 }}>
+                ○ {s.title}
+              </Text>
+            ))}
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <TouchableOpacity>
+                <Text style={{ color: '#4F46E5', fontWeight: '600' }}>Add all steps</Text>
+              </TouchableOpacity>
+              <TouchableOpacity>
+                <Text style={{ color: '#4F46E5' }}>Add first step</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
+
+      <View style={{ marginTop: 24, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 16 }}>
+        <TouchableOpacity
+          onPress={handleMarkDone}
+          disabled={actionLoading === 'done'}
+          style={{
+            backgroundColor: '#4F46E5',
+            borderRadius: 10,
+            padding: 14,
+            alignItems: 'center',
+            marginBottom: 10,
+          }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '600' }}>
+            {actionLoading === 'done' ? 'Marking done…' : '✓ Mark as done'}
+          </Text>
+        </TouchableOpacity>
+
+        {!showNotNowOptions ? (
+          <TouchableOpacity onPress={() => setShowNotNowOptions(true)} style={{ marginBottom: 10 }}>
+            <Text>🕐 Not now</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ marginBottom: 10, gap: 8 }}>
+            <Text style={{ color: '#666', fontSize: 12 }}>When should we try again?</Text>
+            <TouchableOpacity onPress={() => handleNotNow('later_today')}>
+              <Text>Later today</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleNotNow('tomorrow')}>
+              <Text>Tomorrow</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <TouchableOpacity onPress={handleReschedule}>
+          <Text>📅 Reschedule</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#fff' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 20, fontWeight: '700', marginBottom: 16 },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  label: { color: '#888' },
-  value: { fontWeight: '600', textTransform: 'capitalize' },
-  breakdownButton: {
-    marginTop: 20,
-    borderWidth: 1.5,
-    borderColor: '#333',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  breakdownButtonText: { fontWeight: '600', color: '#333' },
-  subtasksBox: { marginTop: 20, backgroundColor: '#f5f5f5', borderRadius: 8, padding: 14 },
-  subtasksLabel: { fontWeight: '700', marginBottom: 8 },
-  subtaskItem: { marginBottom: 6, fontSize: 14 },
-  doneButton: {
-    marginTop: 24,
-    backgroundColor: '#333',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  doneButtonText: { color: '#fff', fontWeight: '600' },
-  snoozeLink: { textAlign: 'center', marginTop: 12, color: '#888' },
-});

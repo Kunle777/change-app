@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 const ExpoSecureStoreAdapter = {
@@ -7,12 +8,18 @@ const ExpoSecureStoreAdapter = {
   removeItem: (key: string) => SecureStore.deleteItemAsync(key),
 };
 
+const LocalStorageAdapter = {
+  getItem: async (key: string) => globalThis.localStorage?.getItem(key) ?? null,
+  setItem: async (key: string, value: string) => globalThis.localStorage?.setItem(key, value),
+  removeItem: async (key: string) => globalThis.localStorage?.removeItem(key),
+};
+
 export const supabase = createClient(
   'https://jcflmvahszgqikxtnuwn.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpjZmxtdmFoc3pncWlreHRudXduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNzQzMDcsImV4cCI6MjA5ODg1MDMwN30.2Hch6dnANq1yzhYELZJG5qqO3_KI2tBgsje4GYQpPR8', // from Settings → API, the anon/public key, NOT service_role
   {
     auth: {
-      storage: ExpoSecureStoreAdapter,
+      storage: Platform.OS === 'web' ? LocalStorageAdapter : ExpoSecureStoreAdapter,
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
@@ -22,7 +29,9 @@ export const supabase = createClient(
 
 let refreshPromise: ReturnType<typeof supabase.auth.refreshSession> | null = null;
 
-export async function getAuthHeader(forceRefresh = false): Promise<{ Authorization: string; 'Content-Type': string }> {
+export async function getAuthHeader(
+  forceRefresh = false,
+): Promise<{ Authorization: string; 'Content-Type': string }> {
   const { data, error } = await supabase.auth.getSession();
   let session = data.session;
 

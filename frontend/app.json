@@ -5,13 +5,15 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "elvyn",
     "userInterfaceStyle": "light",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "com.ktlabs.elvyn"
     },
     "android": {
-      "package": "com.kunletech.change",
+      "package": "com.ktlabs.elvyn",
+      "usesCleartextTraffic": true,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -50,7 +52,9 @@
           "speechRecognitionPermission": "Allow Change to use speech recognition to transcribe your Brain Dump."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-localization"
     ],
     "experiments": {
       "reactCompiler": true

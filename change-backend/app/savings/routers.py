@@ -36,6 +36,19 @@ from app.database import AsyncSessionLocal
 router = APIRouter(prefix="/api/savings", tags=["savings"])
 
 
+@router.get("", response_model=list[VaultResponse])
+async def list_vaults(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(SavingsVault)
+        .where(SavingsVault.user_id == current_user.id)
+        .order_by(SavingsVault.created_at.desc())
+    )
+    return result.scalars().all()
+
+
 @router.post("/{vault_id}/deposit-intent")
 async def create_deposit_intent(
     vault_id: str,
@@ -410,13 +423,16 @@ async def request_bank_account_change(
     return {"status": "pending", "unlock_at": unlock_at}
 
 
-ADMIN_EMAIL = os.environ["ADMIN_EMAIL"]  # add this to your .env — your own email, gates this route
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
 
 @router.post("/admin/withdraw-revenue")
 async def trigger_revenue_withdrawal(
     current_user: User = Depends(get_current_user),
 ):
+    if not ADMIN_EMAIL:
+        raise HTTPException(503, "ADMIN_EMAIL is not configured")
+
     if current_user.email_from_token != ADMIN_EMAIL:
         raise HTTPException(403, "Not authorized")
 

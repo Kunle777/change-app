@@ -15,13 +15,13 @@ export default function ForgotPasswordScreen() {
     }
     setLoading(true);
     await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: 'frontend://reset-password',
+      redirectTo: 'elvyn://reset-password',
     });
     setLoading(false);
 
     Alert.alert(
       'Check your email',
-      'If an account exists for that email, a reset link has been sent.'
+      'If an account exists for that email, a reset link has been sent.',
     );
     navigation.goBack();
   }

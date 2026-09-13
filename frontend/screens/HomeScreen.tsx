@@ -20,20 +20,14 @@ import WinLogScreen from './WinLogScreen';
 type Nav = NativeStackNavigationProp<
   RootStackParamList & { [K in keyof MainTabParamList]: MainTabParamList[K] }
 >;
-import TaskCard from '../components/TaskCard';
-import { getTasks, createTask, markTaskDone, snoozeTask } from '../services/tasks';
+import TaskRow from '../components/tasks/TaskRow';
+import TaskActionsSheet from '../components/tasks/TaskActionSheet';
+import { getTasks, createTask, markTaskDone, snoozeTask, cancelTask } from '../services/tasks';
 import { updateFcmToken } from '../services/auth';
 import { getTodayCheckinStatus } from '../services/checkins';
 import { supabase } from '../services/supabase';
-
-type Task = {
-  id: string;
-  title: string;
-  priority: string;
-  status: string;
-  due_date?: string;
-  reminder_time?: string;
-};
+import ElvynMascot from '../components/ElvynMascot';
+import type { Task } from '../types/task';
 
 type CheckinStatus = {
   checkins_enabled: boolean;
@@ -51,6 +45,8 @@ export default function HomeScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [checkinStatus, setCheckinStatus] = useState<CheckinStatus>(null);
   const [now, setNow] = useState(new Date());
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [sheetVisible, setSheetVisible] = useState(false);
 
   const hour = now.getHours();
 
@@ -189,6 +185,10 @@ export default function HomeScreen() {
     }
   }
 
+  async function refreshTasks() {
+    await loadTasks();
+  }
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -199,6 +199,9 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.mascotHeader}>
+        <ElvynMascot variant="supportive" size={120} />
+      </View>
       {checkinStatus?.checkins_enabled && (
         <TouchableOpacity
           style={styles.persistentCheckinIcon}
@@ -329,14 +332,31 @@ export default function HomeScreen() {
         keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={loadTasks} />}
         renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}>
-            <TaskCard
-              task={item}
-              onDone={() => handleDone(item.id)}
-              onSnooze={() => handleSnooze(item.id)}
-            />
-          </TouchableOpacity>
+          <TaskRow
+            task={item}
+            onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
+            onToggleComplete={() => handleDone(item.id)}
+            onMore={() => {
+              setActiveTask(item);
+              setSheetVisible(true);
+            }}
+          />
         )}
+      />
+      <TaskActionsSheet
+        visible={sheetVisible}
+        onClose={() => setSheetVisible(false)}
+        onMarkDone={() => (activeTask ? handleDone(activeTask.id) : Promise.resolve())}
+        onNotNow={() => (activeTask ? handleSnooze(activeTask.id) : Promise.resolve())}
+        onReschedule={() =>
+          activeTask && navigation.navigate('TaskDetail', { taskId: activeTask.id })
+        }
+        onEdit={() => activeTask && navigation.navigate('TaskDetail', { taskId: activeTask.id })}
+        onCancel={() =>
+          activeTask
+            ? cancelTask(activeTask.id).then(refreshTasks)
+            : Promise.resolve()
+        }
       />
     </View>
   );
@@ -344,6 +364,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, backgroundColor: '#f5f5f5' },
+  mascotHeader: { alignItems: 'center', height: 140, marginBottom: 8 },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',

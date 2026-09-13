@@ -23,12 +23,14 @@ import SavingsScreen from '../screens/SavingsScreen';
 import DepositScreen from '../screens/DepositScreen';
 import WithdrawalPinSetupScreen from '../screens/WithdrawalPinSetupScreen';
 import WithdrawScreen from '../screens/WithdrawScreen';
+import CountryConfirmScreen from '../screens/CountryConfirmScreen';
 
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   ForgotPassword: undefined;
   ResetPassword: undefined;
+  CountryConfirm: undefined;
   ChangePassword: undefined;
   TaskDetail: { taskId: string };
   MainTabs: undefined;
@@ -116,6 +118,11 @@ export default function AppNavigator() {
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       <Stack.Screen
+        name="CountryConfirm"
+        component={CountryConfirmScreen}
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
+      <Stack.Screen
         name="ResetPassword"
         options={{ presentation: 'modal', headerShown: true, title: 'Reset Password' }}
         component={ResetPasswordWrapper}
@@ -146,13 +153,41 @@ export default function AppNavigator() {
         component={WinLogScreen}
         options={{ headerShown: true, title: 'Wins' }}
       />
-      <Stack.Screen name="PasscodeSetup" component={PasscodeSetupScreen} options={{ headerShown: true, title: 'Passcode' }} />
-      <Stack.Screen name="BankAccountSetup" component={BankAccountSetupScreen} options={{ headerShown: true, title: 'Bank account' }} />
-      <Stack.Screen name="CreateVault" component={CreateVaultScreen} options={{ headerShown: true, title: 'New vault' }} />
-      <Stack.Screen name="Savings" component={SavingsScreen} options={{ headerShown: true, title: 'Savings' }} />
-      <Stack.Screen name="Deposit" component={DepositScreen} options={{ headerShown: true, title: 'Deposit' }} />
-      <Stack.Screen name="WithdrawalPinSetup" component={WithdrawalPinSetupScreen} options={{ headerShown: true, title: 'Withdrawal PIN' }} />
-      <Stack.Screen name="Withdraw" component={WithdrawScreen} options={{ headerShown: true, title: 'Withdraw' }} />
+      <Stack.Screen
+        name="PasscodeSetup"
+        component={PasscodeSetupScreen}
+        options={{ headerShown: true, title: 'Passcode' }}
+      />
+      <Stack.Screen
+        name="BankAccountSetup"
+        component={BankAccountSetupScreen}
+        options={{ headerShown: true, title: 'Bank account' }}
+      />
+      <Stack.Screen
+        name="CreateVault"
+        component={CreateVaultScreen}
+        options={{ headerShown: true, title: 'New vault' }}
+      />
+      <Stack.Screen
+        name="Savings"
+        component={SavingsScreen}
+        options={{ headerShown: true, title: 'Savings' }}
+      />
+      <Stack.Screen
+        name="Deposit"
+        component={DepositScreen}
+        options={{ headerShown: true, title: 'Deposit' }}
+      />
+      <Stack.Screen
+        name="WithdrawalPinSetup"
+        component={WithdrawalPinSetupScreen}
+        options={{ headerShown: true, title: 'Withdrawal PIN' }}
+      />
+      <Stack.Screen
+        name="Withdraw"
+        component={WithdrawScreen}
+        options={{ headerShown: true, title: 'Withdraw' }}
+      />
     </Stack.Navigator>
   );
 }

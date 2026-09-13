@@ -52,3 +52,6 @@ class User(Base):
     )
     kyc_verified_name: Mapped[str | None] = mapped_column(String, nullable=True)  # set ONLY by the webhook, never directly
 
+    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    first_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
