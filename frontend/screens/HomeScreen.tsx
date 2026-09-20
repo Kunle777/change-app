@@ -1,464 +1,247 @@
-import { useEffect, useState, useCallback } from 'react';
-import {
-  Platform,
-  AppState,
-  View,
-  FlatList,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  RefreshControl,
-} from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { useNavigation } from '@react-navigation/native';
+import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
-import WinLogScreen from './WinLogScreen';
-
-type Nav = NativeStackNavigationProp<
-  RootStackParamList & { [K in keyof MainTabParamList]: MainTabParamList[K] }
->;
-import TaskRow from '../components/tasks/TaskRow';
-import TaskActionsSheet from '../components/tasks/TaskActionSheet';
-import { getTasks, createTask, markTaskDone, snoozeTask, cancelTask } from '../services/tasks';
-import { updateFcmToken } from '../services/auth';
-import { getTodayCheckinStatus } from '../services/checkins';
-import { supabase } from '../services/supabase';
+import { FlatList, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import ElvynMascot from '../components/ElvynMascot';
+import TaskActionSheet from '../components/tasks/TaskActionSheet';
+import RescheduleSheet from '../components/tasks/RescheduleSheet';
+import TaskRow from '../components/tasks/TaskRow';
+import { getMyProfile } from '../services/users';
+import {
+  getTodayCheckinStatus,
+  submitEveningCheckin,
+  submitMorningCheckin,
+} from '../services/checkins';
+import {
+  cancelTask,
+  completeTask,
+  getTasksByDate,
+  notNowTask,
+  rescheduleTask,
+} from '../services/tasks';
 import type { Task } from '../types/task';
 
-type CheckinStatus = {
-  checkins_enabled: boolean;
-  morning_done: boolean;
-  evening_done: boolean;
-} | null;
+const QUICK_MOOD_MAP: Record<string, number> = { 'Not great': 2, Okay: 3, Good: 4 };
 
-export default function HomeScreen() {
-  const navigation = useNavigation<Nav>();
+function toDateString(date: Date) {
+  return date.toISOString().split('T')[0];
+}
+
+function getTimeOfDay(): 'morning' | 'evening' {
+  return new Date().getHours() < 12 ? 'morning' : 'evening';
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+export default function HomeScreen({ navigation }: any) {
+  const [firstName, setFirstName] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [newTitle, setnewTitle] = useState('');
-  const [reminderDate, setReminderDate] = useState<Date | null>(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [checkinStatus, setCheckinStatus] = useState<CheckinStatus>(null);
-  const [now, setNow] = useState(new Date());
+  const [checkInStatus, setCheckInStatus] = useState<{
+    checkins_enabled: boolean;
+    morning_done: boolean;
+    evening_done: boolean;
+  } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [rescheduleVisible, setRescheduleVisible] = useState(false);
 
-  const hour = now.getHours();
+  const timeOfDay = getTimeOfDay();
+  const alreadyCheckedIn =
+    timeOfDay === 'morning' ? checkInStatus?.morning_done : checkInStatus?.evening_done;
 
-  const loadTasks = useCallback(async () => {
-    setLoading(true);
+  const loadAll = useCallback(async () => {
     try {
-      const data = await getTasks();
-      setTasks(data);
-    } catch (err) {
-      console.log('loadTasks error:', err);
-      if (
-        (err instanceof Error && err.message.includes('Please log in again')) ||
-        (err as any)?.response?.status === 401
-      ) {
-        await supabase.auth.signOut();
-        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-      }
-    } finally {
-      setLoading(false);
+      const [profile, todayTasks, status] = await Promise.all([
+        getMyProfile(),
+        getTasksByDate(toDateString(new Date()), 'all'),
+        getTodayCheckinStatus(),
+      ]);
+      setFirstName(profile.first_name ?? '');
+      setTasks(todayTasks);
+      setCheckInStatus(status);
+    } catch (error) {
+      console.log('Home load failed:', error);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      loadTasks();
-    }, []),
+      loadAll();
+    }, [loadAll]),
   );
 
-  useEffect(() => {
-    registerForPushNotification();
-    import('../services/notifications')
-      .then((n) => n.requestNotificationPermissions())
-      .catch(() => {});
-
-    let isMounted = true;
-    getTodayCheckinStatus()
-      .then((data) => {
-        if (isMounted) setCheckinStatus(data);
-      })
-      .catch(() => {
-        if (isMounted)
-          setCheckinStatus({ checkins_enabled: false, morning_done: false, evening_done: false });
-      });
-
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') setNow(new Date());
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.remove();
-    };
-  }, []);
-
-  async function registerForPushNotification() {
-    if (Platform.OS === 'web') return;
+  async function handleRefresh() {
+    setRefreshing(true);
     try {
-      const messagingModule = await import('@react-native-firebase/messaging');
-      const messaging = messagingModule.default;
-      if (!messaging || typeof messaging !== 'function') return;
-      const instance = messaging();
-      const authStatus = await instance.requestPermission();
-      const enabled =
-        authStatus === (messaging as any).AuthorizationStatus?.AUTHORIZED ||
-        authStatus === (messaging as any).AuthorizationStatus?.PROVISIONAL;
-      if (!enabled) return;
-      const token = await instance.getToken();
-      if (token) await updateFcmToken(token);
-    } catch {
-      // silently skip in Expo Go — Firebase requires a native build
+      await loadAll();
+    } finally {
+      setRefreshing(false);
     }
   }
 
-  async function handleDone(taskId: string) {
+  async function handleQuickMood(label: string) {
+    const mood = QUICK_MOOD_MAP[label];
     try {
-      await markTaskDone(taskId);
-      const n = await import('../services/notifications').catch(() => null);
-      if (n && typeof n.cancelTaskReminder === 'function') await n.cancelTaskReminder(taskId);
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    } catch (err) {
-      console.log('handleDone error:', err);
+      if (timeOfDay === 'morning') await submitMorningCheckin(mood, '');
+      else await submitEveningCheckin(mood, '', null);
+      await loadAll();
+    } catch (error) {
+      console.log('Quick check-in failed:', error);
     }
   }
 
-  async function handleSnooze(taskId: string) {
-    try {
-      const updatedTask = await snoozeTask(taskId);
-      if (updatedTask?.reminder_time) {
-        const n = await import('../services/notifications').catch(() => null);
-        if (n && typeof n.rescheduleTaskReminder === 'function')
-          await n.rescheduleTaskReminder(
-            taskId,
-            updatedTask.title,
-            new Date(updatedTask.reminder_time),
-          );
-      }
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updatedTask } : t)));
-    } catch (err) {
-      console.log('handleSnooze error:', err);
-    }
-  }
-
-  async function handleCreateTask() {
-    if (!newTitle.trim()) return;
-    let reminder_time: string | undefined;
-    let due_date: string | undefined;
-    if (reminderDate) {
-      const iso = reminderDate.toISOString();
-      reminder_time = iso;
-      due_date = iso.split('T')[0] + 'T00:00:00';
-    }
-    try {
-      const createdTask = await createTask({
-        title: newTitle.trim(),
-        ...(reminder_time ? { reminder_time } : {}),
-        ...(due_date ? { due_date } : {}),
-      });
-      if (reminder_time && createdTask?.id) {
-        try {
-          const n = await import('../services/notifications');
-          if (typeof n.scheduleTaskReminder === 'function')
-            await n.scheduleTaskReminder(
-              createdTask.id,
-              createdTask.title,
-              new Date(reminder_time),
-            );
-        } catch (err) {
-          console.log('scheduleTaskReminder error:', err);
-        }
-      }
-      setnewTitle('');
-      setReminderDate(null);
-      loadTasks();
-    } catch (err) {
-      console.log('createTask error:', err);
-    }
-  }
-
-  async function refreshTasks() {
-    await loadTasks();
-  }
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text>Loading...</Text>
-      </View>
-    );
-  }
+  const completedCount = tasks.filter((task) => task.status === 'completed').length;
+  const remaining = tasks.length - completedCount;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.mascotHeader}>
-        <ElvynMascot variant="supportive" size={120} />
-      </View>
-      {checkinStatus?.checkins_enabled && (
-        <TouchableOpacity
-          style={styles.persistentCheckinIcon}
-          onPress={() =>
-            navigation.navigate('CheckIn', { type: hour < 12 ? 'morning' : 'evening' })
-          }
-        >
-          <Text style={styles.persistentCheckinIconText}>{hour < 12 ? '🌅' : '🌙'} Check In</Text>
-        </TouchableOpacity>
-      )}
-      {checkinStatus?.checkins_enabled && !checkinStatus.morning_done && hour < 12 && (
-        <TouchableOpacity
-          style={styles.banner}
-          onPress={() => navigation.navigate('CheckIn', { type: 'morning' })}
-        >
-          <Text style={styles.bannerText}>🌅 Morning check-in ready — tap to start</Text>
-          <TouchableOpacity
-            onPress={() => setCheckinStatus({ ...checkinStatus, morning_done: true })}
-          >
-            <Text style={styles.bannerDismiss}>✕</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      )}
-      {checkinStatus?.checkins_enabled && !checkinStatus.evening_done && hour >= 12 && (
-        <TouchableOpacity
-          style={[styles.banner, styles.bannerEvening]}
-          onPress={() => navigation.navigate('CheckIn', { type: 'evening' })}
-        >
-          <Text style={styles.bannerText}>🌙 Evening check-in ready — tap to start</Text>
-          <TouchableOpacity
-            onPress={() => setCheckinStatus({ ...checkinStatus, evening_done: true })}
-          >
-            <Text style={styles.bannerDismiss}>✕</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      )}
-
-      <TextInput
-        style={styles.input}
-        placeholder="New task.."
-        value={newTitle}
-        onChangeText={setnewTitle}
-        placeholderTextColor="#999"
-      />
-      <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowDatePicker(true)}>
-        <Text style={styles.datePickerText}>
-          {reminderDate ? `📅 ${reminderDate.toLocaleDateString()}` : '📅 Set date (optional)'}
+    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+      <View style={{ backgroundColor: '#1A1636', padding: 20, paddingTop: 50 }}>
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16, letterSpacing: 2 }}>
+          ELVYN
         </Text>
-      </TouchableOpacity>
-      {reminderDate && (
-        <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowTimePicker(true)}>
-          <Text style={styles.datePickerText}>
-            {`⏰ ${reminderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+        <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700', marginTop: 20 }}>
+          {getGreeting()},
+        </Text>
+        <Text style={{ color: '#A78BFA', fontSize: 22, fontWeight: '700' }}>
+          {firstName || 'there'}
+        </Text>
+        <View style={{ marginTop: 16 }}>
+          <ElvynMascot variant="supportive" size={64} />
+        </View>
+      </View>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      >
+        <View
+          style={{
+            backgroundColor: '#fff',
+            margin: 16,
+            marginTop: -24,
+            borderRadius: 16,
+            padding: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            elevation: 2,
+          }}
+        >
+          <View>
+            <Text style={{ fontWeight: '700', fontSize: 15 }}>Today's Progress</Text>
+            <Text style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
+              {completedCount} of {tasks.length} tasks completed
+            </Text>
+          </View>
+          <Text style={{ color: '#4F46E5', fontWeight: '700' }}>
+            {tasks.length > 0 ? `${remaining} left` : '—'}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('BrainDump')}
+          style={{ backgroundColor: '#fff', marginHorizontal: 16, marginBottom: 16, borderRadius: 16, padding: 16 }}
+        >
+          <Text style={{ fontWeight: '700', fontSize: 15 }}>What's on your mind?</Text>
+          <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+            Capture ideas, tasks, or anything on your mind. Elvyn will help you turn it into action.
           </Text>
         </TouchableOpacity>
-      )}
-      {reminderDate && (
-        <TouchableOpacity onPress={() => setReminderDate(null)}>
-          <Text style={styles.clearDate}>✕ Clear date</Text>
-        </TouchableOpacity>
-      )}
-      {showDatePicker && (
-        <DateTimePicker
-          value={reminderDate || new Date()}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          minimumDate={new Date()}
-          onValueChange={(_event, date) => {
-            setShowDatePicker(false);
-            if (date instanceof Date && !isNaN(date.getTime())) {
-              setReminderDate((prev) => {
-                const base = prev || new Date();
-                const next = new Date(date);
-                next.setHours(base.getHours(), base.getMinutes());
-                return next;
-              });
-            }
-          }}
-          onDismiss={() => setShowDatePicker(false)}
-        />
-      )}
-      {showTimePicker && (
-        <DateTimePicker
-          value={reminderDate || new Date()}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onValueChange={(_event, time) => {
-            setShowTimePicker(false);
-            if (time instanceof Date && !isNaN(time.getTime()) && reminderDate) {
-              const updated = new Date(reminderDate);
-              updated.setHours(time.getHours(), time.getMinutes(), 0, 0);
-              setReminderDate(updated);
-            }
-          }}
-          onDismiss={() => setShowTimePicker(false)}
-        />
-      )}
-      <TouchableOpacity onPress={handleCreateTask} style={styles.addButton}>
-        <Text style={styles.addButtonText}>Add Task</Text>
-      </TouchableOpacity>
 
-      <View style={styles.checkinRow}>
+        <View style={{ backgroundColor: '#FFF7ED', marginHorizontal: 16, marginBottom: 16, borderRadius: 16, padding: 16 }}>
+          <Text style={{ fontWeight: '700', fontSize: 15 }}>
+            How are you {timeOfDay === 'morning' ? 'this morning' : 'this evening'}?
+          </Text>
+          {alreadyCheckedIn ? (
+            <Text style={{ color: '#10B981', marginTop: 8, fontWeight: '600' }}>✓ Checked in</Text>
+          ) : (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              {['Good', 'Okay', 'Not great'].map((label) => (
+                <TouchableOpacity
+                  key={label}
+                  onPress={() => handleQuickMood(label)}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E5C99B', alignItems: 'center' }}
+                >
+                  <Text style={{ fontSize: 12 }}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          <TouchableOpacity onPress={() => navigation.navigate('CheckIn', { type: timeOfDay })} style={{ marginTop: 12 }}>
+            <Text style={{ color: '#4F46E5', fontWeight: '600' }}>Check in →</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity
-          style={styles.checkinButton}
-          onPress={() => navigation.navigate('CheckIn', { type: 'morning' })}
-        >
-          <Text style={styles.checkinButtonText}>Morning Check-in</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.checkinButton}
-          onPress={() => navigation.navigate('CheckIn', { type: 'evening' })}
-        >
-          <Text style={styles.checkinButtonText}>Evening Check-in</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.calendarButton}
           onPress={() => navigation.navigate('Calendar')}
+          style={{ backgroundColor: '#fff', marginHorizontal: 16, marginBottom: 16, borderRadius: 16, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
         >
-          <Text style={styles.calendarButtonText}>📅 Calendar</Text>
+          <Text style={{ fontWeight: '600' }}>
+            Today, {new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+          </Text>
+          <Text style={{ color: '#4F46E5' }}>View calendar →</Text>
         </TouchableOpacity>
-      </View>
-      <TouchableOpacity onPress={() => navigation.navigate('WinLog')}>
-        <Text style={styles.winLogLink}>🏆 Win Log</Text>
-      </TouchableOpacity>
-      <Text style={styles.sectionTitle}>My Tasks</Text>
-      <FlatList
-        data={tasks}
-        keyExtractor={(item) => item.id}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadTasks} />}
-        renderItem={({ item }) => (
-          <TaskRow
-            task={item}
-            onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
-            onToggleComplete={() => handleDone(item.id)}
-            onMore={() => {
-              setActiveTask(item);
-              setSheetVisible(true);
-            }}
+
+        <View style={{ backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 16, padding: 16, marginBottom: 24 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={{ fontWeight: '700', fontSize: 15 }}>
+              Today's Tasks <Text style={{ fontSize: 12, color: '#888' }}>({remaining} left)</Text>
+            </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Calendar')}>
+              <Text style={{ color: '#4F46E5', fontSize: 12 }}>See all →</Text>
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={tasks}
+            keyExtractor={(task) => task.id}
+            scrollEnabled={false}
+            ListEmptyComponent={<Text style={{ color: '#888', paddingVertical: 12 }}>No tasks today.</Text>}
+            renderItem={({ item }) => (
+              <TaskRow
+                task={item}
+                onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
+                onToggleComplete={() => completeTask(item.id).then(loadAll)}
+                onMore={() => {
+                  setActiveTask(item);
+                  setSheetVisible(true);
+                }}
+              />
+            )}
           />
-        )}
-      />
-      <TaskActionsSheet
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CreateTask')}
+            style={{ backgroundColor: '#4F46E5', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 12 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '600' }}>+ Create task</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      <TaskActionSheet
         visible={sheetVisible}
         onClose={() => setSheetVisible(false)}
-        onMarkDone={() => (activeTask ? handleDone(activeTask.id) : Promise.resolve())}
-        onNotNow={() => (activeTask ? handleSnooze(activeTask.id) : Promise.resolve())}
-        onReschedule={() =>
-          activeTask && navigation.navigate('TaskDetail', { taskId: activeTask.id })
-        }
-        onEdit={() => activeTask && navigation.navigate('TaskDetail', { taskId: activeTask.id })}
-        onCancel={() =>
-          activeTask
-            ? cancelTask(activeTask.id).then(refreshTasks)
-            : Promise.resolve()
-        }
+        onMarkDone={() => activeTask && completeTask(activeTask.id).then(loadAll)}
+        onNotNow={() => activeTask && notNowTask(activeTask.id, 'later_today').then(loadAll)}
+        onReschedule={() => setRescheduleVisible(true)}
+        onEdit={() => activeTask && navigation.navigate('CreateTask', { taskId: activeTask.id })}
+        onCancel={() => activeTask && cancelTask(activeTask.id).then(loadAll)}
+      />
+      <RescheduleSheet
+        visible={rescheduleVisible}
+        task={activeTask}
+        onClose={() => setRescheduleVisible(false)}
+        onSave={async (dueDate, reminderTime) => {
+          if (activeTask) {
+            await rescheduleTask(activeTask.id, dueDate, reminderTime);
+            await loadAll();
+          }
+        }}
       />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#f5f5f5' },
-  mascotHeader: { alignItems: 'center', height: 140, marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    backgroundColor: '#fff',
-  },
-  datePickerButton: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    backgroundColor: '#fff',
-  },
-  datePickerText: { color: '#333' },
-  clearDate: { color: '#888', fontSize: 12, marginBottom: 8, textAlign: 'right' },
-  addButton: {
-    backgroundColor: '#007bff',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  addButtonText: { color: '#fff', fontWeight: '600' },
-  checkinRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  checkinButton: {
-    flex: 1,
-    backgroundColor: '#28a745',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  checkinButtonText: { color: '#fff', fontWeight: '600' },
-  aiButton: {
-    backgroundColor: '#6f42c1',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  aiButtonText: { color: '#fff', fontWeight: '600' },
-  brainDumpButton: {
-    backgroundColor: '#e67e22',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  brainDumpButtonText: { color: '#fff', fontWeight: '600' },
-  settingsButton: {
-    backgroundColor: '#6c757d',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  settingsButtonText: { color: '#fff', fontWeight: '600' },
-  sectionTitle: { textAlign: 'center', fontWeight: 'bold', fontSize: 18, marginBottom: 8 },
-  banner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff3cd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  bannerEvening: { backgroundColor: '#d1ecf1' },
-  bannerText: { flex: 1, fontSize: 13, color: '#333' },
-  bannerDismiss: { fontSize: 16, color: '#888', paddingLeft: 8 },
-  calendarButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1.5,
-    borderColor: '#333',
-    padding: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  calendarButtonText: { color: '#333', fontWeight: '600' },
-  persistentCheckinIcon: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#eee',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginBottom: 8,
-  },
-  persistentCheckinIconText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#333',
-  },
-  winLogLink: { textAlign: 'center', color: '#333', marginBottom: 16, fontWeight: '600' },
-});

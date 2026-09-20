@@ -26,3 +26,11 @@ export async function getEntitlements() {
   if (!res.ok) throw new Error('Failed to fetch entitlements');
   return res.json();
 }
+
+export async function getMyProfile() {
+  const res = await fetch(`${API_BASE_URL}/api/users/me`, {
+    headers: await authHeader(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch profile');
+  return res.json();
+}

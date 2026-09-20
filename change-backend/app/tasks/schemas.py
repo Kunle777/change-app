@@ -5,6 +5,15 @@ from typing import Optional
 from app.tasks.models import PriorityEnum, StatusEnum
 from app.tasks.models import RecurrenceEnum
 
+
+def normalize_task_enum(value, enum_type):
+    if isinstance(value, str):
+        try:
+            return enum_type[value]
+        except KeyError:
+            pass
+    return value
+
 class TaskCreate(BaseModel):
     title: str
     priority: PriorityEnum = PriorityEnum.low
@@ -13,6 +22,16 @@ class TaskCreate(BaseModel):
     due_date: Optional[datetime] = None
     reminder_time: Optional[datetime] = None
     recurrence: Optional[RecurrenceEnum] = None
+
+    @field_validator('priority', 'status', 'recurrence', mode='before')
+    @classmethod
+    def accept_enum_names(cls, value, info):
+        enum_types = {
+            'priority': PriorityEnum,
+            'status': StatusEnum,
+            'recurrence': RecurrenceEnum,
+        }
+        return normalize_task_enum(value, enum_types[info.field_name])
 
 class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -41,6 +60,20 @@ class TaskUpdate(BaseModel):
     reminder_time: Optional[datetime] = None
     recurrence: Optional[RecurrenceEnum] = None
 
+    @field_validator('priority', 'status', 'recurrence', mode='before')
+    @classmethod
+    def accept_enum_names(cls, value, info):
+        enum_types = {
+            'priority': PriorityEnum,
+            'status': StatusEnum,
+            'recurrence': RecurrenceEnum,
+        }
+        return normalize_task_enum(value, enum_types[info.field_name])
+
 class TaskReschedule(BaseModel):
     due_date: datetime | None = None
     reminder_time: datetime | None = None
+
+
+class CalendarDatesResponse(BaseModel):
+    dates: list[str]  # ISO date strings ("2026-09-15") that have >=1 task

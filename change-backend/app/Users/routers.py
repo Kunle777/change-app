@@ -72,3 +72,7 @@ async def get_entitlements(
     db: AsyncSession = Depends(get_db),
 ):
     return await get_or_create_entitlements(db, current_user.id)
+
+@router.get("/api/users/me", response_model=UserProfileResponse)
+async def get_my_profile(current_user=Depends(get_current_user)):
+    return current_user

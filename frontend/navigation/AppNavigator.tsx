@@ -14,6 +14,7 @@ import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import TaskDetailScreen from '../screens/TaskDetailScreen';
 import CalendarScreen from '../screens/CalenderScreen';
+import CreateTaskScreen from '../screens/CreateTaskScreen';
 import { Ionicons } from '@expo/vector-icons';
 import WinLogScreen from '../screens/WinLogScreen';
 import PasscodeSetupScreen from '../screens/PasscodeSetupScreen';
@@ -33,6 +34,7 @@ export type RootStackParamList = {
   CountryConfirm: undefined;
   ChangePassword: undefined;
   TaskDetail: { taskId: string };
+  CreateTask: { taskId?: string; prefilledDate?: string } | undefined;
   MainTabs: undefined;
   CheckIn: { type: 'morning' | 'evening' };
   Calendar: undefined;
@@ -137,6 +139,11 @@ export default function AppNavigator() {
         name="TaskDetail"
         component={TaskDetailScreen}
         options={{ headerShown: true, title: 'Task' }}
+      />
+      <Stack.Screen
+        name="CreateTask"
+        component={CreateTaskScreen}
+        options={{ headerShown: true, title: 'Create Task' }}
       />
       <Stack.Screen
         name="CheckIn"

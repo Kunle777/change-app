@@ -11,3 +11,8 @@ class EntitlementsResponse(BaseModel):
     ai_enabled: bool
     brain_dump_enabled: bool
     premium: bool
+
+class UserProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    first_name: str | None
+    avatar_url: str | None

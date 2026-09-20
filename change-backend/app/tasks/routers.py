@@ -5,10 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.users.models import User
 from app.users.dependencies import get_current_user
-from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate, TaskReschedule
+from app.tasks.schemas import CalendarDatesResponse, TaskCreate, TaskResponse, TaskUpdate, TaskReschedule
 from app.tasks import service
 from app.tasks.models import StatusEnum
 from app.ai import service as ai_service
+from datetime import datetime as dt
 
 router = APIRouter(
     prefix="/api/tasks",
@@ -129,3 +130,25 @@ async def cancel(
     db: AsyncSession = Depends(get_db),
 ):
     return await service.cancel_task(db, task_id, current_user.id)
+
+
+@router.get("/api/tasks/calendar-dates", response_model=CalendarDatesResponse)
+async def calendar_dates(
+    year: int,
+    month: int,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    dates = await service.get_task_dates_for_month(db, current_user.id, year, month)
+    return {"dates": dates}
+
+
+@router.get("/api/tasks/by-date", response_model=list[TaskResponse])
+async def tasks_by_date(
+    date: str,
+    status: str = "all",
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    target = dt.strptime(date, "%Y-%m-%d").date()
+    return await service.get_tasks_for_date(db, current_user.id, target, status)

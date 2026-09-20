@@ -1,12 +1,25 @@
-import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY_PREFIX = 'notif_id_for_task_';
+const isExpoGo = (() => {
+  const constants = Constants as typeof Constants & {
+    expoGo?: boolean;
+  };
+  return (
+    constants.appOwnership === 'expo' ||
+    constants.executionEnvironment === 'storeClient' ||
+    constants.expoGo === true
+  );
+})();
 
 export async function requestNotificationPermissions(): Promise<boolean> {
+  if (isExpoGo) return false;
+
   try {
+    const Notifications = await import('expo-notifications');
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
@@ -23,6 +36,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     return false;
   }
 
+  const Notifications = await import('expo-notifications');
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
@@ -37,6 +51,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   }
 
   if (Platform.OS === 'android') {
+    const Notifications = await import('expo-notifications');
     await Notifications.setNotificationChannelAsync('default', {
       name: 'default',
       importance: Notifications.AndroidImportance.HIGH,
@@ -52,13 +67,14 @@ export async function scheduleTaskReminder(
   title: string,
   reminderDate: Date,
 ): Promise<string | null> {
-  if (Platform.OS === 'web' || !Device.isDevice) return null;
+  if (isExpoGo || Platform.OS === 'web' || !Device.isDevice) return null;
   if (!(reminderDate instanceof Date) || !Number.isFinite(reminderDate.getTime())) return null;
   if (reminderDate.getTime() <= Date.now()) return null;
 
   const permissionGranted = await requestNotificationPermissions();
   if (!permissionGranted) return null;
 
+  const Notifications = await import('expo-notifications');
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Task Reminder',
@@ -76,8 +92,11 @@ export async function scheduleTaskReminder(
 }
 
 export async function cancelTaskReminder(taskId: string): Promise<void> {
+  if (isExpoGo) return;
+
   const notificationId = await AsyncStorage.getItem(STORAGE_KEY_PREFIX + taskId);
   if (notificationId) {
+    const Notifications = await import('expo-notifications');
     await Notifications.cancelScheduledNotificationAsync(notificationId);
     await AsyncStorage.removeItem(STORAGE_KEY_PREFIX + taskId);
   }

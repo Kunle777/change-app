@@ -1,9 +1,9 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func
 from app.tasks.models import Task, StatusEnum, RecurrenceEnum
 from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate
-from datetime import datetime, timedelta,timezone
+from datetime import datetime, timedelta,timezone, date, time   
 from app.ai import gemini
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import selectinload
@@ -177,3 +177,49 @@ async def cancel_task(db: AsyncSession, task_id, user_id) -> Task:
     await db.commit()
     await db.refresh(task)
     return task
+
+
+
+async def get_task_dates_for_month(db: AsyncSession, user_id, year: int, month: int) -> list[str]:
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+
+    result = await db.execute(
+        select(func.date(Task.due_date))
+        .where(
+            Task.user_id == user_id,
+            Task.is_deleted == False,
+            Task.due_date >= start,
+            Task.due_date < end,
+        )
+        .distinct()
+    )
+    rows = result.scalars().all()
+    return sorted({r.isoformat() if hasattr(r, "isoformat") else str(r) for r in rows})
+
+
+async def get_tasks_for_date(
+    db: AsyncSession, user_id, target_date: date, status_filter: str = "all"
+) -> list[Task]:
+    start = datetime.combine(target_date, time.min, tzinfo=timezone.utc)
+    end = datetime.combine(target_date, time.max, tzinfo=timezone.utc)
+
+    query = select(Task).where(
+        Task.user_id == user_id,
+        Task.is_deleted == False,
+        Task.due_date >= start,
+        Task.due_date <= end,
+    )
+
+    if status_filter == "incomplete":
+        query = query.where(Task.status == "pending")
+    elif status_filter == "completed":
+        query = query.where(Task.status == "completed")
+    elif status_filter == "overdue":
+        query = query.where(
+            Task.status == "pending", Task.due_date < datetime.now(timezone.utc)
+        )
+
+    query = query.order_by(Task.status, Task.reminder_time)
+    result = await db.execute(query)
+    return result.scalars().all()
