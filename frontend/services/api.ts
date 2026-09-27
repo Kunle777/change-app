@@ -22,7 +22,7 @@ function getApiBaseUrl() {
   }
 
   // Use the development machine LAN IP so a physical device can reach the backend
-  return 'http://10.40.38.217:8000'; // Replace with your development machine's LAN IP address
+  return 'http://10.149.111.217:8000'; // Replace with your development machine's LAN IP address
 }
 
 const baseURL = getApiBaseUrl();

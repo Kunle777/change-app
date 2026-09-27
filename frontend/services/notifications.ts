@@ -65,6 +65,7 @@ export async function scheduleTaskReminder(
   taskId: string,
   title: string,
   reminderDate: Date,
+  priorityReminder = false,
 ): Promise<string | null> {
   if (isExpoGo || Platform.OS === 'web' || !Device.isDevice) return null;
   if (!(reminderDate instanceof Date) || !Number.isFinite(reminderDate.getTime())) return null;
@@ -73,12 +74,29 @@ export async function scheduleTaskReminder(
   const permissionGranted = await requestNotificationPermissions();
   if (!permissionGranted) return null;
 
+  const Notifications = await import('expo-notifications');
+
+  if (Platform.OS === 'android' && priorityReminder) {
+    await Notifications.setNotificationChannelAsync('priority-reminders', {
+      name: 'Priority Reminders',
+      importance: Notifications.AndroidImportance.MAX,
+      bypassDnd: true,
+      vibrationPattern: [0, 250, 250, 250],
+    });
+  }
+
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Task Reminder',
       body: title,
       sound: true,
-      data: { type: TASK_REMINDER_TYPE, taskId, reminderTime: reminderDate.toISOString() },
+  data: {
+    type: TASK_REMINDER_TYPE,
+    taskId,
+    reminderTime: reminderDate.toISOString(),
+    priorityReminder,
+  },
+      ...(Platform.OS === 'android' && priorityReminder && { channelId: 'priority-reminders' }),
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -119,9 +137,10 @@ export async function rescheduleTaskReminder(
   taskId: string,
   title: string,
   newReminderDate: Date,
+  priorityReminder = false,
 ): Promise<string | null> {
   await cancelTaskReminder(taskId);
-  return scheduleTaskReminder(taskId, title, newReminderDate);
+  return scheduleTaskReminder(taskId, title, newReminderDate, priorityReminder);
 }
 
 let reconciliation: Promise<void> | null = null;
@@ -236,7 +255,7 @@ async function reconcileTaskReminders() {
         ...(storedId ? [storedId] : []),
       ]);
       await AsyncStorage.multiRemove([key, timeKey]);
-      await scheduleTaskReminder(task.id, task.title, new Date(currentTimestamp));
+      await scheduleTaskReminder(task.id, task.title, new Date(currentTimestamp), task.priority_reminder);
     }
 
     for (const key of reminderKeys) {

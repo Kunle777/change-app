@@ -36,6 +36,7 @@ class SuggestedRecurrenceRule(BaseModel):
 
 class BrainDumpCreate(BaseModel):
     content: str
+    source: Literal["text", "voice"] = "text"
 
 
 class BrainDumpResponse(BaseModel):
@@ -44,8 +45,11 @@ class BrainDumpResponse(BaseModel):
     id: UUID
     user_id: UUID
     content: str
+    source: Literal["text", "voice"]
     is_converted: bool
+    created_task_id: UUID | None = None
     created_at: datetime
+    possible_task: bool = False
 
 
 class ParsedTaskSuggestion(BaseModel):

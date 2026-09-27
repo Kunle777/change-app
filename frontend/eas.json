@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 22.5.0",
+    "version": ">= 24.0.0",
     "appVersionSource": "remote"
   },
   "build": {
@@ -9,7 +9,16 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "cache": {
+        "key": "preview-cache-v1"
+      },
+      "env": {
+        "NODE_ENV": "production"
+      }
     },
     "production": {
       "autoIncrement": true

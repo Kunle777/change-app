@@ -2,6 +2,7 @@ import { api } from './api';
 import { API_BASE_URL } from './api';
 import { getAuthHeader } from './supabase';
 import { cancelTaskReminder, scheduleTaskReminder } from './notifications';
+import { removeTaskFromCalendar } from './calendarSync';
 import type { Task } from '../types/task';
 
 export async function getTasks() {
@@ -14,6 +15,7 @@ interface TaskInput {
   title: string;
   description?: string;
   priority: string;
+  priority_reminder?: boolean;
   due_date?: string;
   reminder_time?: string;
   recurrence?: string;
@@ -41,7 +43,7 @@ export async function createTask(input: TaskInput): Promise<Task> {
   }
   const task: Task = await res.json();
   if (task.reminder_time)
-    await scheduleTaskReminder(task.id, task.title, new Date(task.reminder_time));
+    await scheduleTaskReminder(task.id, task.title, new Date(task.reminder_time), task.priority_reminder);
   return task;
 }
 
@@ -58,13 +60,14 @@ export async function updateTask(taskId: string, input: Partial<TaskInput>): Pro
   const task: Task = await res.json();
   await cancelTaskReminder(taskId);
   if (task.reminder_time)
-    await scheduleTaskReminder(task.id, task.title, new Date(task.reminder_time));
+    await scheduleTaskReminder(task.id, task.title, new Date(task.reminder_time), task.priority_reminder);
   return task;
 }
 
 export async function deleteTask(taskId: string) {
   const headers = await getAuthHeader();
   const response = await api.delete(`/api/tasks/${taskId}`, { headers });
+  await removeTaskFromCalendar(taskId);
   return response.data;
 }
 
@@ -122,7 +125,7 @@ export async function notNowTask(
   const task: Task = await res.json();
 
   await cancelTaskReminder(taskId);
-  await scheduleTaskReminder(task.id, task.title, snoozedUntil);
+  await scheduleTaskReminder(task.id, task.title, snoozedUntil, task.priority_reminder);
 
   return task;
 }
@@ -145,7 +148,7 @@ export async function rescheduleTask(
   const task: Task = await res.json();
 
   await cancelTaskReminder(taskId);
-  if (reminderTime) await scheduleTaskReminder(task.id, task.title, reminderTime);
+  if (reminderTime) await scheduleTaskReminder(task.id, task.title, reminderTime, task.priority_reminder);
 
   return task;
 }
@@ -195,7 +198,7 @@ export async function parseVoiceTask(transcript: string): Promise<VoiceTaskParse
   return response.json();
 }
 
-export type UpcomingReminderTask = Pick<Task, 'id' | 'title' | 'reminder_time'>;
+export type UpcomingReminderTask = Pick<Task, 'id' | 'title' | 'reminder_time' | 'priority_reminder'>;
 
 export async function getUpcomingTasks(days = 14): Promise<UpcomingReminderTask[]> {
   const response = await fetch(`${API_BASE_URL}/api/tasks/upcoming?days=${days}`, {

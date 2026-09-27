@@ -16,6 +16,20 @@ export interface Task {
   occurrence_date?: string | null;
   created_at: string;
   updated_at: string;
+  priority_reminder: boolean;
 }
 
 export type TaskRecurrence = 'none' | 'daily' | 'weekly' | 'monthly';
+
+export interface SuggestedAction {
+  type: string;
+  label: string;
+  task_id?: string;
+  screen?: string;
+}
+
+export interface AIMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  suggested_actions?: SuggestedAction[];
+}

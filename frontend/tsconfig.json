@@ -1,8 +1,9 @@
 {
-  "extends": "expo/tsconfig.base",
+  "extends": "expo/tsconfig.base.json",
   "compilerOptions": {
     "strict": true,
-    "jsx": "react-native",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
     "paths": {
       "@/*": ["./src/*"],
       "@/assets/*": ["./assets/*"]

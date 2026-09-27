@@ -23,14 +23,14 @@ async def chat_with_ai_route(
     current_user: User = Depends(get_current_user),
 ):
 
+    if not await service.check_usage(db, current_user.id):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily AI limit reached")
     try:
-        await service.check_usage(db, current_user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
-
-    ai_response_text = gemini.generate_response(payload.message)
+        response = await service.handle_chat(db, current_user.id, payload.message)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     await service.increment_usage(db, current_user.id)
-    return ChatResponse(response=ai_response_text)
+    return response
 
 
 @router.post("/evening-summary", response_model=ChatResponse)
@@ -38,10 +38,8 @@ async def evening_summary_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        await service.check_usage(db, current_user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+    if not await service.check_usage(db, current_user.id):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily AI limit reached")
 
     status_data = await checkin_service.get_todays_checkin_status(db, current_user)
     prompt = (
@@ -51,4 +49,4 @@ async def evening_summary_route(
     )
     summary = gemini.generate_response(prompt)
     await service.increment_usage(db, current_user.id)
-    return ChatResponse(response=summary)
+    return ChatResponse(intent="general_coaching", message=summary, suggested_actions=[])

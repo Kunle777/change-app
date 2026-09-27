@@ -1,9 +1,19 @@
 // plugins/withNotificationManifestFix.js
-const { withDangerousMod } = require('@expo/config-plugins');
+const { withAndroidManifest, withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-module.exports = function withNotificationManifestFix(config) {
+function withCleartextAndKeyboard(config) {
+  return withAndroidManifest(config, (config) => {
+    const manifest = config.modResults;
+    const app = manifest.manifest.application[0];
+    app.$['android:usesCleartextTraffic'] = 'true';
+    app.$['android:windowSoftInputMode'] = 'adjustResize';
+    return config;
+  });
+}
+
+function withFirebaseNotificationFix(config) {
   return withDangerousMod(config, [
     'android',
     async (config) => {
@@ -28,4 +38,10 @@ module.exports = function withNotificationManifestFix(config) {
       return config;
     },
   ]);
+}
+
+module.exports = function withNotificationManifestFix(config) {
+  config = withCleartextAndKeyboard(config);
+  config = withFirebaseNotificationFix(config);
+  return config;
 };

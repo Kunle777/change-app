@@ -15,4 +15,3 @@ class EntitlementsResponse(BaseModel):
 class UserProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     first_name: str | None
-    avatar_url: str | None

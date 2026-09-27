@@ -13,7 +13,6 @@
     },
     "android": {
       "package": "com.kunletech.change",
-      "usesCleartextTraffic": true,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

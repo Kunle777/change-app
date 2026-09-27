@@ -84,6 +84,7 @@ class Task(Base):
     reminder_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     recurrence: Mapped[str] = mapped_column(String(), nullable=True, default=None)
     is_reminder_sent: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
+    priority_reminder: Mapped[bool] = mapped_column(Boolean, server_default="false", default=False, nullable=False)
     recurrence_processed: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
     series_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("task_series.id", ondelete="SET NULL"), nullable=True, index=True

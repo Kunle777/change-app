@@ -2,6 +2,8 @@ import asyncio
 import json
 import re
 import uuid
+from datetime import datetime
+import uuid
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,7 @@ async def create_brain_dump(db: AsyncSession, brain_dump: BrainDumpCreate, user_
     db_brain_dump = BrainDump(
         user_id=user_id,
         content=brain_dump.content,
+        source=brain_dump.source,
         is_converted=False,
     )
     db.add(db_brain_dump)
@@ -209,6 +212,7 @@ async def convert_to_task(
     dump.is_converted = True
     try:
         await db.flush()
+        dump.created_task_id = created_tasks[0].id if created_tasks else None
         for task in created_tasks:
             await log_task_event(
                 db,
