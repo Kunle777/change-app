@@ -12,6 +12,8 @@ export interface Task {
   reminder_time?: string | null;
   snoozed_until?: string | null;
   recurrence?: string | null;
+  series_id?: string | null;
+  occurrence_date?: string | null;
   created_at: string;
   updated_at: string;
 }

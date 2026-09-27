@@ -9,25 +9,28 @@ import {
   TextInput,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
-import WinLogScreen from './WinLogScreen';
 
 type Nav = NativeStackNavigationProp<
   RootStackParamList & { [K in keyof MainTabParamList]: MainTabParamList[K] }
 >;
 import TaskRow from '../components/tasks/TaskRow';
 import TaskActionsSheet from '../components/tasks/TaskActionSheet';
-import { getTasks, createTask, markTaskDone, snoozeTask, cancelTask } from '../services/tasks';
+import { getTasks, createTask, markTaskDone, snoozeTask, cancelTask, parseVoiceTask } from '../services/tasks';
 import { updateFcmToken } from '../services/auth';
 import { getTodayCheckinStatus } from '../services/checkins';
 import { supabase } from '../services/supabase';
 import ElvynMascot from '../components/ElvynMascot';
+import VoiceCaptureButton from '../components/VoiceCaptureButton';
 import type { Task } from '../types/task';
+import { useColors, type ThemeColors } from '../theme/colors';
+import { recordDailyActivity, type ActivityStreak } from '../services/activity';
 
 type CheckinStatus = {
   checkins_enabled: boolean;
@@ -37,9 +40,14 @@ type CheckinStatus = {
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
+  const colors = useColors();
+  const styles = createStyles(colors);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [newTitle, setnewTitle] = useState('');
+  const [taskDueDate, setTaskDueDate] = useState<Date | null>(null);
+  const [taskPriority, setTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [understandingVoice, setUnderstandingVoice] = useState(false);
   const [reminderDate, setReminderDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -47,6 +55,9 @@ export default function HomeScreen() {
   const [now, setNow] = useState(new Date());
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [repeatFrequency, setRepeatFrequency] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  const [repeatDays, setRepeatDays] = useState<number[]>([]);
+  const [activityStreak, setActivityStreak] = useState<ActivityStreak | null>(null);
 
   const hour = now.getHours();
 
@@ -55,6 +66,10 @@ export default function HomeScreen() {
     try {
       const data = await getTasks();
       setTasks(data);
+      void recordDailyActivity().then(setActivityStreak).catch(() => {});
+      void import('../services/notifications').then(({ reconcileNotifications }) =>
+        reconcileNotifications(),
+      ).catch((error) => console.warn('Could not refresh local task reminders', error));
     } catch (err) {
       console.log('loadTasks error:', err);
       if (
@@ -150,19 +165,41 @@ export default function HomeScreen() {
   }
 
   async function handleCreateTask() {
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim() || understandingVoice) return;
     let reminder_time: string | undefined;
     let due_date: string | undefined;
+    const dueDateSource = taskDueDate ?? reminderDate ?? (repeatFrequency !== 'none' ? new Date() : null);
+    if (dueDateSource) {
+      const localDate = new Date(dueDateSource);
+      due_date = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}T00:00:00`;
+    }
     if (reminderDate) {
       const iso = reminderDate.toISOString();
       reminder_time = iso;
-      due_date = iso.split('T')[0] + 'T00:00:00';
     }
     try {
+      const localStartDate = dueDateSource
+        ? `${dueDateSource.getFullYear()}-${String(dueDateSource.getMonth() + 1).padStart(2, '0')}-${String(dueDateSource.getDate()).padStart(2, '0')}`
+        : undefined;
       const createdTask = await createTask({
         title: newTitle.trim(),
+        priority: taskPriority,
         ...(reminder_time ? { reminder_time } : {}),
         ...(due_date ? { due_date } : {}),
+        ...(repeatFrequency !== 'none' && localStartDate
+          ? {
+              recurrence_rule: {
+                frequency: repeatFrequency,
+                interval: 1,
+                start_date: localStartDate,
+                ...(repeatFrequency === 'weekly' ? { days_of_week: repeatDays } : {}),
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos',
+                ...(reminderDate
+                  ? { local_time: `${String(reminderDate.getHours()).padStart(2, '0')}:${String(reminderDate.getMinutes()).padStart(2, '0')}:00` }
+                  : {}),
+              },
+            }
+          : {}),
       });
       if (reminder_time && createdTask?.id) {
         try {
@@ -178,10 +215,70 @@ export default function HomeScreen() {
         }
       }
       setnewTitle('');
+      setTaskDueDate(null);
+      setTaskPriority('medium');
+      setRepeatFrequency('none');
+      setRepeatDays([]);
       setReminderDate(null);
       loadTasks();
     } catch (err) {
       console.log('createTask error:', err);
+    }
+  }
+
+  async function handleVoiceTask(transcript: string) {
+    setUnderstandingVoice(true);
+    try {
+      const parsed = await parseVoiceTask(transcript);
+      setnewTitle(parsed.title);
+      setTaskPriority(parsed.priority);
+
+      const candidateDate = parsed.due_date ? new Date(`${parsed.due_date}T00:00:00`) : null;
+      const validDate = candidateDate && !Number.isNaN(candidateDate.getTime()) ? candidateDate : null;
+      setTaskDueDate(validDate);
+
+      if (parsed.time) {
+        const [hours, minutes] = parsed.time.split(':').map(Number);
+        if (Number.isInteger(hours) && hours >= 0 && hours <= 23 && Number.isInteger(minutes) && minutes >= 0 && minutes <= 59) {
+          const reminder = validDate ? new Date(validDate) : new Date();
+          reminder.setHours(hours, minutes, 0, 0);
+          if (reminder.getTime() <= Date.now()) {
+            if (validDate) {
+              setReminderDate(null);
+              Alert.alert(
+                'That reminder time has passed',
+                'I kept the task and its due date, but cleared the reminder. You can choose a future time before adding it.',
+              );
+            } else {
+              reminder.setDate(reminder.getDate() + 1);
+              setReminderDate(reminder);
+              const tomorrow = new Date(reminder);
+              tomorrow.setHours(0, 0, 0, 0);
+              setTaskDueDate(tomorrow);
+              Alert.alert(
+                'Using tomorrow for the reminder',
+                'That time has already passed today, so I set the reminder for its next occurrence. You can change it before adding the task.',
+              );
+            }
+          } else {
+            setReminderDate(reminder);
+            if (!validDate) {
+              const today = new Date(reminder);
+              today.setHours(0, 0, 0, 0);
+              setTaskDueDate(today);
+            }
+          }
+        } else {
+          setReminderDate(null);
+        }
+      } else {
+        setReminderDate(null);
+      }
+    } catch {
+      setnewTitle(transcript);
+      Alert.alert('Voice task not interpreted', 'The transcript is in the title field. Add any date or priority details manually.');
+    } finally {
+      setUnderstandingVoice(false);
     }
   }
 
@@ -239,18 +336,72 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
-      <TextInput
-        style={styles.input}
-        placeholder="New task.."
-        value={newTitle}
-        onChangeText={setnewTitle}
-        placeholderTextColor="#999"
-      />
+      <View style={styles.taskTitleRow}>
+        <TextInput
+          style={[styles.input, styles.taskTitleInput]}
+          placeholder="New task.."
+          value={newTitle}
+          onChangeText={setnewTitle}
+          placeholderTextColor={colors.textMuted}
+        />
+        <VoiceCaptureButton onTranscript={setnewTitle} onFinalTranscript={handleVoiceTask} />
+      </View>
+      {understandingVoice && <Text style={styles.voiceStatus}>Interpreting task…</Text>}
+      {taskPriority !== 'medium' && (
+        <Text style={styles.voiceStatus}>Recognized priority: {taskPriority}</Text>
+      )}
       <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowDatePicker(true)}>
         <Text style={styles.datePickerText}>
-          {reminderDate ? `📅 ${reminderDate.toLocaleDateString()}` : '📅 Set date (optional)'}
+          {taskDueDate ? `📅 ${taskDueDate.toLocaleDateString()}` : '📅 Set date (optional)'}
         </Text>
       </TouchableOpacity>
+      <View style={styles.repeatPicker}>
+        <Text style={styles.repeatLabel}>Repeat</Text>
+        {([
+          ['none', 'Does not repeat'],
+          ['daily', 'Daily'],
+          ['weekly', 'Weekly'],
+          ['monthly', 'Monthly'],
+        ] as const).map(([value, label]) => (
+          <TouchableOpacity
+            key={value}
+            accessibilityRole="button"
+            accessibilityState={{ selected: repeatFrequency === value }}
+            onPress={() => {
+              setRepeatFrequency(value);
+              if (value === 'weekly' && repeatDays.length === 0) {
+                setRepeatDays([(taskDueDate ?? reminderDate ?? new Date()).getDay() === 0
+                  ? 6
+                  : (taskDueDate ?? reminderDate ?? new Date()).getDay() - 1]);
+              }
+            }}
+            style={[styles.repeatOption, repeatFrequency === value && { backgroundColor: colors.primary }]}
+          >
+            <Text style={{ color: repeatFrequency === value ? colors.surface : colors.text, fontSize: 12 }}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {repeatFrequency === 'weekly' && (
+        <View style={styles.repeatPicker}>
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label, day) => (
+            <TouchableOpacity
+              key={`${label}-${day}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: repeatDays.includes(day) }}
+              onPress={() => setRepeatDays((current) =>
+                current.includes(day)
+                  ? current.length > 1 ? current.filter((item) => item !== day) : current
+                  : [...current, day].sort(),
+              )}
+              style={[styles.repeatOption, repeatDays.includes(day) && { backgroundColor: colors.primary }]}
+            >
+              <Text style={{ color: repeatDays.includes(day) ? colors.surface : colors.text }}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
       {reminderDate && (
         <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowTimePicker(true)}>
           <Text style={styles.datePickerText}>
@@ -258,14 +409,14 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
       )}
-      {reminderDate && (
-        <TouchableOpacity onPress={() => setReminderDate(null)}>
+      {(reminderDate || taskDueDate) && (
+        <TouchableOpacity onPress={() => { setReminderDate(null); setTaskDueDate(null); }}>
           <Text style={styles.clearDate}>✕ Clear date</Text>
         </TouchableOpacity>
       )}
       {showDatePicker && (
         <DateTimePicker
-          value={reminderDate || new Date()}
+          value={taskDueDate || reminderDate || new Date()}
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           minimumDate={new Date()}
@@ -278,6 +429,9 @@ export default function HomeScreen() {
                 next.setHours(base.getHours(), base.getMinutes());
                 return next;
               });
+              const dueDate = new Date(date);
+              dueDate.setHours(0, 0, 0, 0);
+              setTaskDueDate(dueDate);
             }
           }}
           onDismiss={() => setShowDatePicker(false)}
@@ -299,7 +453,11 @@ export default function HomeScreen() {
           onDismiss={() => setShowTimePicker(false)}
         />
       )}
-      <TouchableOpacity onPress={handleCreateTask} style={styles.addButton}>
+      <TouchableOpacity
+        onPress={handleCreateTask}
+        style={[styles.addButton, (!newTitle.trim() || understandingVoice) && styles.addButtonDisabled]}
+        disabled={!newTitle.trim() || understandingVoice}
+      >
         <Text style={styles.addButtonText}>Add Task</Text>
       </TouchableOpacity>
 
@@ -323,9 +481,11 @@ export default function HomeScreen() {
           <Text style={styles.calendarButtonText}>📅 Calendar</Text>
         </TouchableOpacity>
       </View>
-      <TouchableOpacity onPress={() => navigation.navigate('WinLog')}>
-        <Text style={styles.winLogLink}>🏆 Win Log</Text>
-      </TouchableOpacity>
+      {!!activityStreak && (
+        <Text style={styles.activityStreak}>
+          {activityStreak.current_streak} day streak · best {activityStreak.longest_streak}
+        </Text>
+      )}
       <Text style={styles.sectionTitle}>My Tasks</Text>
       <FlatList
         data={tasks}
@@ -362,94 +522,100 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#f5f5f5' },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, padding: 20, backgroundColor: colors.background },
   mascotHeader: { alignItems: 'center', height: 140, marginBottom: 8 },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
   },
+  taskTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  taskTitleInput: { flex: 1 },
+  voiceStatus: { color: colors.textMuted, fontSize: 12, marginBottom: 8 },
   datePickerButton: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
   },
-  datePickerText: { color: '#333' },
-  clearDate: { color: '#888', fontSize: 12, marginBottom: 8, textAlign: 'right' },
+  datePickerText: { color: colors.text },
+  clearDate: { color: colors.textMuted, fontSize: 12, marginBottom: 8, textAlign: 'right' },
   addButton: {
-    backgroundColor: '#007bff',
+    backgroundColor: colors.primary,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 12,
   },
-  addButtonText: { color: '#fff', fontWeight: '600' },
+  addButtonText: { color: colors.surface, fontWeight: '600' },
+  addButtonDisabled: { opacity: 0.5 },
   checkinRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   checkinButton: {
     flex: 1,
-    backgroundColor: '#28a745',
+    backgroundColor: colors.primaryDeep,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
-  checkinButtonText: { color: '#fff', fontWeight: '600' },
+  checkinButtonText: { color: colors.surface, fontWeight: '600' },
   aiButton: {
-    backgroundColor: '#6f42c1',
+    backgroundColor: colors.primaryDeep,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 16,
   },
-  aiButtonText: { color: '#fff', fontWeight: '600' },
+  aiButtonText: { color: colors.surface, fontWeight: '600' },
   brainDumpButton: {
-    backgroundColor: '#e67e22',
+    backgroundColor: colors.accent,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 16,
   },
-  brainDumpButtonText: { color: '#fff', fontWeight: '600' },
+  brainDumpButtonText: { color: colors.text, fontWeight: '600' },
   settingsButton: {
-    backgroundColor: '#6c757d',
+    backgroundColor: colors.textMuted,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 16,
   },
-  settingsButtonText: { color: '#fff', fontWeight: '600' },
+  settingsButtonText: { color: colors.surface, fontWeight: '600' },
   sectionTitle: { textAlign: 'center', fontWeight: 'bold', fontSize: 18, marginBottom: 8 },
   banner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff3cd',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
   },
-  bannerEvening: { backgroundColor: '#d1ecf1' },
-  bannerText: { flex: 1, fontSize: 13, color: '#333' },
-  bannerDismiss: { fontSize: 16, color: '#888', paddingLeft: 8 },
+  bannerEvening: { backgroundColor: colors.surface },
+  bannerText: { flex: 1, fontSize: 13, color: colors.text },
+  bannerDismiss: { fontSize: 16, color: colors.textMuted, paddingLeft: 8 },
   calendarButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderWidth: 1.5,
-    borderColor: '#333',
+    borderColor: colors.border,
     padding: 10,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 12,
   },
-  calendarButtonText: { color: '#333', fontWeight: '600' },
+  calendarButtonText: { color: colors.text, fontWeight: '600' },
   persistentCheckinIcon: {
     alignSelf: 'flex-end',
-    backgroundColor: '#eee',
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
@@ -458,7 +624,10 @@ const styles = StyleSheet.create({
   persistentCheckinIconText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#333',
+    color: colors.text,
   },
-  winLogLink: { textAlign: 'center', color: '#333', marginBottom: 16, fontWeight: '600' },
+  repeatPicker: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 10 },
+  repeatLabel: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginRight: 4 },
+  repeatOption: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
+  activityStreak: { color: colors.textMuted, fontSize: 12, textAlign: 'center', marginBottom: 10 },
 });

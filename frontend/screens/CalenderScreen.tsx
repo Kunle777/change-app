@@ -23,12 +23,16 @@ type Task = {
   status: string;
   due_date?: string;
   reminder_time?: string;
+  occurrence_date?: string | null;
 };
 
 function getTaskDateKey(task: Task): string | null {
+  if (task.occurrence_date) return task.occurrence_date;
   const raw = task.due_date || task.reminder_time;
   if (!raw) return null;
-  return new Date(raw).toISOString().split('T')[0];
+  const date = new Date(raw);
+  if (!Number.isFinite(date.getTime())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 export default function CalendarScreen() {

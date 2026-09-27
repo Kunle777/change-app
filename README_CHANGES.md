@@ -1,4 +1,6 @@
-# Changes Applied (summary)
+# Historical Changes Applied (summary)
+
+Some notes below describe an earlier workspace state. For current behavior, see [README_change.md](README_change.md), especially its sections on local notifications, recurring tasks, activity streaks, and outbox delivery.
 
 This document explains all edits I made across the workspace, why I made them, and recommended next steps. Use it as a single-source summary when testing or cleaning up temporary fixes.
 

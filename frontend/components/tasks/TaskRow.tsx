@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Task } from '../../types/task';
+import { useColors } from '../../theme/colors';
 
 interface TaskRowProps {
   task: Task;
@@ -8,13 +9,13 @@ interface TaskRowProps {
   onMore: () => void;
 }
 
-const PRIORITY_COLOR: Record<string, string> = {
-  low: '#10B981',
-  medium: '#F59E0B',
-  high: '#EF4444',
-};
-
 export default function TaskRow({ task, onPress, onToggleComplete, onMore }: TaskRowProps) {
+  const colors = useColors();
+  const priorityColors: Record<string, string> = {
+    low: colors.success,
+    medium: colors.accent,
+    high: colors.danger,
+  };
   const isDone = task.status === 'completed';
   const isOverdue =
     task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date();
@@ -27,7 +28,7 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
         alignItems: 'center',
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: '#F1F1F5',
+        borderBottomColor: colors.border,
       }}
     >
       <TouchableOpacity
@@ -37,14 +38,14 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
           height: 22,
           borderRadius: 11,
           borderWidth: 2,
-          borderColor: isDone ? '#10B981' : '#C7C7D1',
-          backgroundColor: isDone ? '#10B981' : 'transparent',
+          borderColor: isDone ? colors.success : colors.border,
+          backgroundColor: isDone ? colors.success : 'transparent',
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: 12,
         }}
       >
-        {isDone && <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>}
+        {isDone && <Text style={{ color: colors.surface, fontSize: 12 }}>✓</Text>}
       </TouchableOpacity>
 
       <View style={{ flex: 1 }}>
@@ -53,7 +54,7 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
             fontSize: 15,
             fontWeight: '500',
             textDecorationLine: isDone ? 'line-through' : 'none',
-            color: isDone ? '#999' : '#111',
+            color: isDone ? colors.textMuted : colors.text,
           }}
         >
           {task.title}
@@ -65,16 +66,21 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
                 width: 6,
                 height: 6,
                 borderRadius: 3,
-                backgroundColor: PRIORITY_COLOR[task.priority],
+                backgroundColor: priorityColors[task.priority],
                 marginRight: 6,
               }}
             />
           )}
           {task.category && (
-            <Text style={{ fontSize: 12, color: '#888', marginRight: 8 }}>{task.category}</Text>
+            <Text style={{ fontSize: 12, color: colors.textMuted, marginRight: 8 }}>{task.category}</Text>
+          )}
+          {task.series_id && task.recurrence && (
+            <Text style={{ fontSize: 11, color: colors.textMuted, marginRight: 8 }}>
+              Repeats {task.recurrence}
+            </Text>
           )}
           {task.reminder_time && (
-            <Text style={{ fontSize: 12, color: '#888' }}>
+            <Text style={{ fontSize: 12, color: colors.textMuted }}>
               {new Date(task.reminder_time).toLocaleTimeString([], {
                 hour: 'numeric',
                 minute: '2-digit',
@@ -82,13 +88,13 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
             </Text>
           )}
           {isOverdue && (
-            <Text style={{ fontSize: 11, color: '#B45309', marginLeft: 8 }}>Overdue</Text>
+            <Text style={{ fontSize: 11, color: colors.danger, marginLeft: 8 }}>Overdue</Text>
           )}
         </View>
       </View>
 
       <TouchableOpacity onPress={onMore} style={{ padding: 6 }}>
-        <Text style={{ fontSize: 18, color: '#999' }}>⋮</Text>
+        <Text style={{ fontSize: 18, color: colors.textMuted }}>⋮</Text>
       </TouchableOpacity>
     </TouchableOpacity>
   );

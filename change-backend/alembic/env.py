@@ -39,7 +39,7 @@ config.set_main_option("sqlalchemy.url", db_url)
 # This forces Python to read your tables and register them on the metadata clipboard.
 from app.database import Base
 from app.users.models import User, UserTier
-from app.tasks.models import Task
+from app.tasks.models import Task, TaskEvent, TaskEventOutbox, TaskSeries  # noqa: F401
 from app.braindump.models import BrainDump
 from app.ai.models import AIUsageLog  # noqa: F401
 from app.wins.models import Win  # noqa: F401

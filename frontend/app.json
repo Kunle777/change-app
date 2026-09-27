@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "elvyn",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.ktlabs.elvyn"

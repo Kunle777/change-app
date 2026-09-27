@@ -5,6 +5,7 @@ annotated-types==0.7.0
 anyio==4.14.1
 asyncpg==0.31.0
 bcrypt==5.0.0
+celery[redis]==5.6.3
 cffi==2.1.0
 click==8.4.2
 colorama==0.4.6
@@ -40,3 +41,4 @@ typing_extensions==4.16.0
 uvicorn==0.51.0
 watchfiles==1.2.0
 websockets==16.1
+tzdata

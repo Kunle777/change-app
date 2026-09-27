@@ -1,4 +1,5 @@
 import { Modal, View, Text, TouchableOpacity, Pressable } from 'react-native';
+import { useColors } from '../../theme/colors';
 
 interface TaskActionsSheetProps {
   visible: boolean;
@@ -19,6 +20,7 @@ export default function TaskActionsSheet({
   onEdit,
   onCancel,
 }: TaskActionsSheetProps) {
+  const colors = useColors();
   const actions = [
     { label: 'Mark as done', onPress: onMarkDone },
     { label: 'Not now', onPress: onNotNow },
@@ -33,14 +35,14 @@ export default function TaskActionsSheet({
         <View
           style={{
             marginTop: 'auto',
-            backgroundColor: '#fff',
+            backgroundColor: colors.surface,
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
             paddingVertical: 8,
             paddingBottom: 24,
           }}
         >
-          <Text style={{ textAlign: 'center', fontWeight: '600', padding: 14 }}>Task actions</Text>
+          <Text style={{ textAlign: 'center', fontWeight: '600', padding: 14, color: colors.text }}>Task actions</Text>
           {actions.map((a) => (
             <TouchableOpacity
               key={a.label}
@@ -52,13 +54,13 @@ export default function TaskActionsSheet({
                 paddingVertical: 14,
                 paddingHorizontal: 20,
                 borderTopWidth: 1,
-                borderTopColor: '#F1F1F5',
+                borderTopColor: colors.border,
               }}
             >
               <Text
                 style={{
                   fontSize: 15,
-                  color: a.destructive ? '#EF4444' : '#111',
+                  color: a.destructive ? colors.danger : colors.text,
                   textAlign: 'center',
                 }}
               >

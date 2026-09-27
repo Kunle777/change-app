@@ -19,6 +19,16 @@ export async function createTask(taskData: {
   due_date?: string;
   reminder_time?: string;
   recurrence?: string;
+  recurrence_rule?: {
+    frequency: 'daily' | 'weekly' | 'monthly';
+    interval?: number;
+    days_of_week?: number[];
+    start_date: string;
+    local_time?: string;
+    timezone?: string;
+    end_date?: string;
+    occurrence_limit?: number;
+  };
 }) {
   const headers = await getAuthHeader();
   const response = await api.post('/api/tasks', taskData, { headers });
@@ -75,6 +85,35 @@ export async function breakdownTask(taskId: string) {
 async function authHeader() {
   const { data } = await supabase.auth.getSession();
   return { Authorization: `Bearer ${data.session?.access_token}` };
+}
+
+export type VoiceTaskParse = {
+  title: string;
+  due_date: string | null;
+  time: string | null;
+  priority: 'low' | 'medium' | 'high';
+};
+
+export async function parseVoiceTask(transcript: string): Promise<VoiceTaskParse> {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const response = await fetch(`${API_BASE_URL}/api/tasks/parse-voice`, {
+    method: 'POST',
+    headers: await getAuthHeader(),
+    body: JSON.stringify({ transcript, today }),
+  });
+  if (!response.ok) throw new Error("Couldn't understand that. Please try again.");
+  return response.json();
+}
+
+export type UpcomingReminderTask = Pick<Task, 'id' | 'title' | 'reminder_time'>;
+
+export async function getUpcomingTasks(days = 14): Promise<UpcomingReminderTask[]> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/upcoming?days=${days}`, {
+    headers: await getAuthHeader(),
+  });
+  if (!response.ok) throw new Error("Couldn't sync upcoming reminders.");
+  return response.json();
 }
 
 // "Not now" — friendlier wrapper over the existing snooze mechanism.
@@ -165,4 +204,12 @@ export async function cancelTask(taskId: string): Promise<Task> {
   const task: Task = await res.json();
   await cancelTaskReminder(taskId);
   return task;
+}
+
+export async function stopTaskSeries(taskId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/stop-series`, {
+    method: 'POST',
+    headers: await getAuthHeader(),
+  });
+  if (!response.ok) throw new Error("Couldn't stop this recurring series.");
 }
