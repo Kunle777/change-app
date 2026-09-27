@@ -20,7 +20,7 @@ This guide summarizes the feature work completed in this workspace during this c
 - New repeating tasks create a `task_series` rule and the first task occurrence together. Daily, weekly, and monthly rules support an interval, start date, local reminder time, IANA time zone, optional end date, and optional occurrence limit.
 - Celery fills a 30-day occurrence window. Each generated occurrence is a normal `tasks` row with `series_id` and `occurrence_date`, so existing Home, Calendar, task actions, and event logging continue to use task records.
 - A partial unique index on `(series_id, occurrence_date)` makes repeated or concurrent generation idempotent. Series rows are locked with `SKIP LOCKED`; old recurrence rows without a series remain supported by the legacy completion-based generator.
-- The Home create-task form offers no repeat, daily, weekly, or monthly, with weekday selection for weekly. Brain Dump conversion also creates a series when the note explicitly asks for repetition. Task detail can stop a series and cancel its future pending occurrences. Changes to an entire series and per-occurrence exceptions are not implemented yet.
+- The Home create-task form offers no repeat, daily, weekly, or monthly, with weekday selection for weekly. Brain Dump conversion also creates a series when the note explicitly asks for repetition. Task detail can edit a recurring title on one occurrence, this and future pending occurrences, or the entire series; it can also stop a series and cancel its future pending occurrences. A one-occurrence title edit does not change the series template.
 - Recurring reminders use the existing Expo local notification mechanism. Reconciliation runs whenever Home loads/synchronizes tasks and when the app returns to the foreground; it schedules only the existing 14-day local window. Series generation itself creates database tasks and never schedules phone notifications directly.
 
 ## Task reminder delivery
@@ -51,7 +51,7 @@ If an outbox insert itself fails or times out, the task action proceeds without 
 
 - Authenticated app startup/sign-in and foreground resume call `POST /api/users/activity` with the device's IANA time zone. The user row stores current streak, longest streak, last active local date, and the time zone used.
 - A row lock and date comparison ensure repeated opens on one local calendar day count once. Returning the next day increments the streak; returning after a missed day starts the current streak at one and preserves the longest streak.
-- The streak is independent of check-ins and Win Log entries. The older Win Log database/API remain for compatibility, but the screen is no longer linked from Home or the app navigation. Streak milestone/evolution data should stay separate from the mascot's neutral/supportive emotional variant; visual evolution tiers are not implemented yet.
+- The streak is independent of check-ins and Win Log entries. The older Win Log database/API remain for compatibility, but the screen is no longer linked from Home or the app navigation. Home shows progress toward 3-, 7-, 30-, and 100-day milestones. Those milestones are presentation only and do not change the mascot's neutral/supportive emotional variant.
 
 ## Appearance and navigation
 
@@ -101,9 +101,10 @@ Use a physical Android device, apply migrations, and run the backend, Celery wor
 3. Reschedule, complete, cancel, and sign out with pending reminders. Confirm old local alerts are canceled and sign-out cleanup leaves non-task notifications alone.
 4. With FCM configured, confirm a matching locally scheduled reminder suppresses the Celery FCM fallback. Then create a task on a client/device that has no local schedule and confirm FCM is attempted as fallback.
 5. Create daily, weekly-on-selected-days, and monthly tasks. Confirm their first occurrence appears in Home and Calendar, Beat fills up to the 30-day window, and each occurrence appears only once with the intended local date/time.
-6. Stop a series from Task Detail. Confirm future pending occurrences disappear, their local reminders reconcile away, and the current/completed occurrence remains in history.
-7. Open the app several times on one local date and confirm current streak increments once. Open after the next local date to confirm it increments by one; after a missed date confirm it resets to one and the longest streak remains.
-8. Toggle Check-ins off and add Win Log entries through any retained API. Confirm neither changes the activity streak.
+6. Edit a recurring title as one occurrence, this and future occurrences, and the entire series. Confirm each scope leaves the other occurrences as expected.
+7. Stop a series from Task Detail. Confirm future pending occurrences disappear, their local reminders reconcile away, and the current/completed occurrence remains in history.
+8. Open the app several times on one local date and confirm current streak increments once. Open after the next local date to confirm it increments by one; after a missed date confirm it resets to one and the longest streak remains. Confirm the Home milestone hint tracks the next 3-, 7-, 30-, or 100-day target.
+9. Toggle Check-ins off and add Win Log entries through any retained API. Confirm neither changes the activity streak.
 
 The backend tests and migration have not been run in this environment; use the verification commands below before treating this checklist as passed.
 

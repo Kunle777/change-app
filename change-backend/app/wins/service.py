@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.wins.models import Win
-from app.users.models import User
+from app.Users.models import User
 from app.wins.schemas import WinCreate
 
 

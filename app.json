@@ -1,12 +1,13 @@
 {
   "expo": {
+    "slug": "change",
     "extra": {
       "eas": {
         "projectId": "d401dd85-2e8f-472b-a212-7ab9c0ec90d5"
       }
     },
     "android": {
-      "package": "com.kunlex.change"
+      "package": "com.kunletech.change"
     }
   }
 }

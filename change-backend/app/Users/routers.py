@@ -2,16 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.users.models import User
-from app.users.dependencies import get_current_user
-from app.users.service import (
+from app.Users.models import User
+from app.Users.dependencies import get_current_user
+from app.Users.service import (
     update_fcm_token,
     get_or_create_entitlements,
     set_country_code,
     record_daily_activity,
     get_activity_streak,
 )
-from app.users.schemas import EntitlementsResponse, CountryUpdate
+from app.Users.schemas import EntitlementsResponse, CountryUpdate
 
 router = APIRouter(prefix="/api", tags=["auth"])
 

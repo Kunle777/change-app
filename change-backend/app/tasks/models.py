@@ -6,7 +6,7 @@ from sqlalchemy import Date, DateTime, Time, func, ForeignKey, Enum, String, Boo
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from app.database import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.users.models import User
+from app.Users.models import User
 
 class PriorityEnum(enum.Enum):
     low = 1

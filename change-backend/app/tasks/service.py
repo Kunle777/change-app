@@ -13,12 +13,58 @@ from app.tasks.models import (
     TaskSeries,
     PriorityEnum,
 )
-from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate
+from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate, SeriesEditRequest
 from app.ai import gemini
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import selectinload
 from app.tasks.task_event_service import log_task_event
 from app.tasks.recurrence_service import stop_task_series
+
+
+async def edit_task_series(
+    db: AsyncSession,
+    task_id: uuid.UUID,
+    user_id: uuid.UUID,
+    edit: SeriesEditRequest,
+):
+    task = await get_task_by_id(db, task_id, user_id)
+    if task is None:
+        return None
+    if task.series_id is None:
+        return False
+
+    series_result = await db.execute(
+        select(TaskSeries).where(TaskSeries.id == task.series_id, TaskSeries.user_id == user_id).with_for_update()
+    )
+    series = series_result.scalar_one_or_none()
+    if series is None:
+        return False
+
+    if edit.scope == "occurrence":
+        targets = [task]
+    else:
+        query = select(Task).where(Task.series_id == series.id, Task.is_deleted.is_(False))
+        if edit.scope == "this_and_future":
+            query = query.where(
+                Task.status == StatusEnum.pending,
+                Task.occurrence_date >= task.occurrence_date,
+            )
+        target_result = await db.execute(query)
+        targets = target_result.scalars().all()
+
+        # Future generated occurrences inherit these values from the series.
+        series.title = edit.title
+        series.description = edit.description
+        series.priority = edit.priority.name
+
+    for occurrence in targets:
+        occurrence.title = edit.title
+        occurrence.description = edit.description
+        occurrence.priority = edit.priority
+
+    await db.commit()
+    await db.refresh(task)
+    return task
 
 def _utc(dt: datetime | None) -> datetime | None:
     if dt is None:

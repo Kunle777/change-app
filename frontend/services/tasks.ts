@@ -213,3 +213,19 @@ export async function stopTaskSeries(taskId: string): Promise<void> {
   });
   if (!response.ok) throw new Error("Couldn't stop this recurring series.");
 }
+
+export type SeriesEditScope = 'occurrence' | 'this_and_future' | 'entire_series';
+
+export async function editTaskSeries(
+  taskId: string,
+  scope: SeriesEditScope,
+  changes: { title: string; description?: string | null; priority: 'low' | 'medium' | 'high' },
+): Promise<Task> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/series-edit`, {
+    method: 'PATCH',
+    headers: { ...(await getAuthHeader()), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope, ...changes }),
+  });
+  if (!response.ok) throw new Error("Couldn't update this recurring task.");
+  return response.json();
+}

@@ -3,11 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.users.dependencies import get_current_user
+from app.Users.dependencies import get_current_user
 from app.checkins.models import CheckInType
 from app.checkins.schemas import CheckInResponse, MorningCheckInCreate, EveningCheckInCreate
 from app.checkins import service
-from app.users.models import User
+from app.Users.models import User
 
 router = APIRouter(
     prefix="/api/checkins",

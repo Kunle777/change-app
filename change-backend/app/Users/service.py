@@ -3,8 +3,8 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.users.models import User
-from app.users.entitlements_models import FeatureEntitlements
+from app.Users.models import User
+from app.Users.entitlements_models import FeatureEntitlements
 
 
 async def record_daily_activity(db: AsyncSession, user_id, timezone_name: str) -> dict:

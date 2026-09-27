@@ -15,6 +15,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Svg, { Circle } from 'react-native-svg';
 import { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
 
 type Nav = NativeStackNavigationProp<
@@ -38,6 +39,11 @@ type CheckinStatus = {
   evening_done: boolean;
 } | null;
 
+const STREAK_MILESTONES = [3, 7, 30, 100];
+const STREAK_RING_SIZE = 72;
+const STREAK_RING_RADIUS = 30;
+const STREAK_RING_CIRCUMFERENCE = 2 * Math.PI * STREAK_RING_RADIUS;
+
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const colors = useColors();
@@ -60,6 +66,14 @@ export default function HomeScreen() {
   const [activityStreak, setActivityStreak] = useState<ActivityStreak | null>(null);
 
   const hour = now.getHours();
+  const nextStreakMilestone = activityStreak
+    ? STREAK_MILESTONES.find((milestone) => milestone > activityStreak.current_streak)
+    : undefined;
+  const streakProgressPercent = activityStreak
+    ? nextStreakMilestone
+      ? Math.min(100, Math.round((activityStreak.current_streak / nextStreakMilestone) * 100))
+      : 100
+    : 0;
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
@@ -482,9 +496,54 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
       {!!activityStreak && (
-        <Text style={styles.activityStreak}>
-          {activityStreak.current_streak} day streak · best {activityStreak.longest_streak}
-        </Text>
+        <View style={styles.activityStreakCard}>
+          <View
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel={`Streak progress: ${streakProgressPercent}%${nextStreakMilestone ? ` toward ${nextStreakMilestone} days` : ', all milestones reached'}`}
+            accessibilityValue={{ min: 0, max: 100, now: streakProgressPercent }}
+            style={styles.activityStreakRing}
+          >
+            <Svg width={STREAK_RING_SIZE} height={STREAK_RING_SIZE}>
+              <Circle
+                cx={STREAK_RING_SIZE / 2}
+                cy={STREAK_RING_SIZE / 2}
+                r={STREAK_RING_RADIUS}
+                fill="none"
+                stroke={colors.border}
+                strokeWidth={7}
+              />
+              <Circle
+                cx={STREAK_RING_SIZE / 2}
+                cy={STREAK_RING_SIZE / 2}
+                r={STREAK_RING_RADIUS}
+                fill="none"
+                stroke={colors.primary}
+                strokeWidth={7}
+                strokeLinecap="round"
+                strokeDasharray={STREAK_RING_CIRCUMFERENCE}
+                strokeDashoffset={STREAK_RING_CIRCUMFERENCE * (1 - streakProgressPercent / 100)}
+                rotation={-90}
+                origin={[STREAK_RING_SIZE / 2, STREAK_RING_SIZE / 2]}
+              />
+            </Svg>
+            <View style={styles.activityStreakRingLabel}>
+              <Text style={styles.activityStreakPercent}>{streakProgressPercent}%</Text>
+            </View>
+          </View>
+          <View style={styles.activityStreakCopy}>
+            <Text style={styles.activityStreakTitle}>
+              {activityStreak.current_streak} day streak · best {activityStreak.longest_streak}
+            </Text>
+            {nextStreakMilestone ? (
+              <Text style={styles.activityStreakHint}>
+                {nextStreakMilestone - activityStreak.current_streak} {nextStreakMilestone - activityStreak.current_streak === 1 ? 'day' : 'days'} to your {nextStreakMilestone}-day milestone
+              </Text>
+            ) : (
+              <Text style={styles.activityStreakHint}>You reached every streak milestone. Keep your own pace.</Text>
+            )}
+          </View>
+        </View>
       )}
       <Text style={styles.sectionTitle}>My Tasks</Text>
       <FlatList
@@ -629,5 +688,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   repeatPicker: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 10 },
   repeatLabel: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginRight: 4 },
   repeatOption: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 },
-  activityStreak: { color: colors.textMuted, fontSize: 12, textAlign: 'center', marginBottom: 10 },
+  activityStreakCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginBottom: 12 },
+  activityStreakRing: { width: STREAK_RING_SIZE, height: STREAK_RING_SIZE, alignItems: 'center', justifyContent: 'center' },
+  activityStreakRingLabel: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  activityStreakPercent: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  activityStreakCopy: { flex: 1, marginLeft: 12 },
+  activityStreakTitle: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  activityStreakHint: { color: colors.textMuted, fontSize: 11, marginTop: 3 },
 });

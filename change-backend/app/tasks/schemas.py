@@ -90,3 +90,10 @@ class TaskReschedule(BaseModel):
 
 class TaskSnooze(BaseModel):
     snoozed_until: datetime | None = None
+
+
+class SeriesEditRequest(BaseModel):
+    scope: Literal["occurrence", "this_and_future", "entire_series"]
+    title: str = Field(min_length=1, max_length=300)
+    description: str | None = None
+    priority: PriorityEnum

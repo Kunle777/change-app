@@ -4,9 +4,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.users.models import User
-from app.users.dependencies import get_current_user
-from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate, TaskReschedule, TaskSnooze
+from app.Users.models import User
+from app.Users.dependencies import get_current_user
+from app.tasks.schemas import (
+    SeriesEditRequest,
+    TaskCreate,
+    TaskReschedule,
+    TaskResponse,
+    TaskSnooze,
+    TaskUpdate,
+)
 from app.tasks import service
 from app.tasks.models import StatusEnum, TaskEvent, TaskEventOutbox, TaskEventType
 from app.tasks.task_event_service import log_task_event
@@ -233,3 +240,18 @@ async def stop_series(
     if not stopped:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurring series not found")
     return {"stopped": True}
+
+
+@router.patch("/{task_id}/series-edit", response_model=TaskResponse)
+async def edit_series(
+    task_id: uuid.UUID,
+    payload: SeriesEditRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await service.edit_task_series(db, task_id, current_user.id, payload)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    if result is False:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task is not linked to a recurring series")
+    return result

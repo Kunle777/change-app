@@ -4,8 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from app.database import get_db
-from app.users.dependencies import get_current_user
-from app.users.models import User
+from app.Users.dependencies import get_current_user
+from app.Users.models import User
 from app.savings.models import SavingsVault, PendingDeposit
 from app.savings.service import ensure_user_has_dva, paystack_fee
 from app.savings.schemas import VaultCreate, VaultResponse
@@ -24,12 +24,12 @@ from app.savings.notifications import (
     notify_payout_failed,
 )
 from app.savings.models import VaultStatus
-from app.users.models import KYCStatus
-from app.users.security import limiter  
+from app.Users.models import KYCStatus
+from app.Users.security import limiter  
 from app.savings.service import initiate_transfer, check_daily_withdrawal_cap, validate_customer_identity, withdraw_platform_revenue
 from app.savings.schemas import BankAccountSetup
-from app.users.security import hash_secret
-from app.users.security import verify_secret
+from app.Users.security import hash_secret
+from app.Users.security import verify_secret
 from app.savings.schemas import BankAccountChangeRequest
 from app.database import AsyncSessionLocal
 

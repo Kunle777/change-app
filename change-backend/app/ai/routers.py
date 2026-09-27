@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.users.dependencies import get_current_user  # Adjust path if different in your project
-from app.users.models import User
+from app.Users.dependencies import get_current_user  # Adjust path if different in your project
+from app.Users.models import User
 from app.ai.schemas import ChatRequest, ChatResponse
 from app.ai import service
 from app.ai import gemini
