@@ -9,6 +9,8 @@ import CheckInScreen from '../screens/CheckInScreen';
 import AIScreen from '../screens/AIScreen';
 import BrainDumpScreen from '../screens/BrainDumpScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import MoreScreen from '../screens/MoreScreen';
+import AppearanceScreen from '../screens/AppearanceScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
@@ -16,7 +18,6 @@ import TaskDetailScreen from '../screens/TaskDetailScreen';
 import CalendarScreen from '../screens/CalenderScreen';
 import CreateTaskScreen from '../screens/CreateTaskScreen';
 import { Ionicons } from '@expo/vector-icons';
-import WinLogScreen from '../screens/WinLogScreen';
 import PasscodeSetupScreen from '../screens/PasscodeSetupScreen';
 import BankAccountSetupScreen from '../screens/BankAccountSetupScreen';
 import CreateVaultScreen from '../screens/CreateVaultScreen';
@@ -25,6 +26,7 @@ import DepositScreen from '../screens/DepositScreen';
 import WithdrawalPinSetupScreen from '../screens/WithdrawalPinSetupScreen';
 import WithdrawScreen from '../screens/WithdrawScreen';
 import CountryConfirmScreen from '../screens/CountryConfirmScreen';
+import { useColors } from '../theme/colors';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -36,9 +38,10 @@ export type RootStackParamList = {
   TaskDetail: { taskId: string };
   CreateTask: { taskId?: string; prefilledDate?: string } | undefined;
   MainTabs: undefined;
+  Settings: undefined;
+  Appearance: undefined;
   CheckIn: { type: 'morning' | 'evening' };
   Calendar: undefined;
-  WinLog: undefined;
   PasscodeSetup: undefined;
   BankAccountSetup: undefined;
   CreateVault: undefined;
@@ -53,19 +56,22 @@ export type MainTabParamList = {
   AI: undefined;
   BrainDump: undefined;
   Savings: undefined;
-  Settings: undefined;
+  More: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 function MainTabs() {
+  const colors = useColors();
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#333',
-        tabBarInactiveTintColor: '#999',
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
       }}
     >
       <Tab.Screen
@@ -98,10 +104,10 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
+        name="More"
+        component={MoreScreen}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal-circle" color={color} size={size} />,
         }}
       />
     </Tab.Navigator>
@@ -135,6 +141,8 @@ export default function AppNavigator() {
         options={{ headerShown: true, title: 'Change Password' }}
       />
       <Stack.Screen name="MainTabs" component={MainTabs} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="Appearance" component={AppearanceScreen} />
       <Stack.Screen
         name="TaskDetail"
         component={TaskDetailScreen}
@@ -148,17 +156,12 @@ export default function AppNavigator() {
       <Stack.Screen
         name="CheckIn"
         component={CheckInScreen}
-        options={{ presentation: 'modal', headerShown: true, title: 'Check-In' }}
+        options={{ presentation: 'modal', headerShown: false, gestureEnabled: true }}
       />
       <Stack.Screen
         name="Calendar"
         component={CalendarScreen}
         options={{ headerShown: true, title: 'Calendar' }}
-      />
-      <Stack.Screen
-        name="WinLog"
-        component={WinLogScreen}
-        options={{ headerShown: true, title: 'Wins' }}
       />
       <Stack.Screen
         name="PasscodeSetup"

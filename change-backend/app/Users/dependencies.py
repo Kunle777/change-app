@@ -3,8 +3,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.users.security import decode_supabase_token
-from app.users.models import User
+from app.Users.security import decode_supabase_token
+from app.Users.models import User
 
 security = HTTPBearer(auto_error=False)
 

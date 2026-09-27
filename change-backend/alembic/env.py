@@ -38,14 +38,14 @@ config.set_main_option("sqlalchemy.url", db_url)
 # 3. Import your Base registry and your explicit models
 # This forces Python to read your tables and register them on the metadata clipboard.
 from app.database import Base
-from app.users.models import User, UserTier
-from app.tasks.models import Task
+from app.Users.models import User, UserTier
+from app.tasks.models import Task, TaskEvent, TaskEventOutbox, TaskSeries  # noqa: F401
 from app.braindump.models import BrainDump
 from app.ai.models import AIUsageLog  # noqa: F401
 from app.wins.models import Win  # noqa: F401
 from app.checkins.models import CheckInType
 from app.savings.models import SavingsVault
-from app.users.entitlements_models import FeatureEntitlements
+from app.Users.entitlements_models import FeatureEntitlements
 
 target_metadata = Base.metadata
 

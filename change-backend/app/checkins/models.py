@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
-from app.users.models import User
+from app.Users.models import User
 
 class CheckInType(str, enum.Enum):
     morning = "morning"

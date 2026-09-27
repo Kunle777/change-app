@@ -35,6 +35,14 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks_celery.spawn_recurring_task_job",
         "schedule": crontab(minute=0, hour="*"),
     },
+    "record-overdue-task-events": {
+        "task": "app.tasks_celery.record_overdue_task_events_job",
+        "schedule": crontab(minute="*"),
+    },
+    "deliver-task-event-outbox": {
+        "task": "app.tasks_celery.deliver_task_event_outbox_job",
+        "schedule": crontab(minute="*"),
+    },
         # ... your existing check_reminders entry stays as-is ...
     "process-matured-vaults": {
         "task": "app.savings.tasks_celery.process_matured_vaults",

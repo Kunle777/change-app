@@ -9,7 +9,7 @@ from decimal import Decimal
 import httpx
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
-from app.users.models import User
+from app.Users.models import User
 from app.savings.models import SavingsVault, PendingDeposit, PendingDepositStatus
 
 PAYSTACK_SECRET_KEY = os.environ["PAYSTACK_SECRET_KEY"]

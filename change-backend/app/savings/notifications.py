@@ -2,7 +2,7 @@
 from decimal import Decimal
 from fcm import send_push_notification  # adjust path if yours differs
 from app.savings.models import SavingsVault
-from app.users.models import User
+from app.Users.models import User
 
 
 async def notify_deposit_confirmed(user: User, vault: SavingsVault, amount: Decimal):

@@ -1,18 +1,18 @@
 {
   "expo": {
     "name": "frontend",
-    "slug": "frontend",
+    "slug": "change",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "elvyn",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.ktlabs.elvyn"
     },
     "android": {
-      "package": "com.ktlabs.elvyn",
+      "package": "com.kunletech.change",
       "usesCleartextTraffic": true,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
@@ -61,7 +61,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "88618350-66a5-4edd-bebe-b487b2433b91"
+        "projectId": "d401dd85-2e8f-472b-a212-7ab9c0ec90d5"
       }
     }
   }

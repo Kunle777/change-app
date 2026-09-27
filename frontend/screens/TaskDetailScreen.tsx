@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { Task } from '../types/task';
-import { getTaskById, breakdownTask } from '../services/tasks';
+import { getTaskById, breakdownTask, stopTaskSeries, editTaskSeries, type SeriesEditScope } from '../services/tasks';
 import { completeTask, notNowTask, rescheduleTask } from '../services/tasks';
+import { useColors } from '../theme/colors';
 
 type BreakdownStep = { title: string };
 
 export default function TaskDetailScreen({ route, navigation }: any) {
   const { taskId } = route.params;
+  const colors = useColors();
 
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
@@ -15,6 +17,9 @@ export default function TaskDetailScreen({ route, navigation }: any) {
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [steps, setSteps] = useState<BreakdownStep[] | null>(null);
   const [showNotNowOptions, setShowNotNowOptions] = useState(false);
+  const [editingSeries, setEditingSeries] = useState(false);
+  const [seriesTitle, setSeriesTitle] = useState('');
+  const [seriesEditLoading, setSeriesEditLoading] = useState(false);
 
   useEffect(() => {
     loadTask();
@@ -83,7 +88,7 @@ export default function TaskDetailScreen({ route, navigation }: any) {
 
   if (loading || !task) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
         <ActivityIndicator />
       </View>
     );
@@ -93,53 +98,53 @@ export default function TaskDetailScreen({ route, navigation }: any) {
     task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date();
 
   return (
-    <ScrollView style={{ flex: 1, padding: 20 }}>
+    <ScrollView style={{ flex: 1, padding: 20, backgroundColor: colors.background }}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text>← Back</Text>
       </TouchableOpacity>
 
-      <Text style={{ fontSize: 22, fontWeight: '700', marginTop: 16 }}>{task.title}</Text>
+      <Text style={{ fontSize: 22, fontWeight: '700', marginTop: 16, color: colors.text }}>{task.title}</Text>
 
       {task.category && (
         <View
           style={{
             alignSelf: 'flex-start',
-            backgroundColor: '#EEF0FF',
+            backgroundColor: `${colors.primary}20`,
             borderRadius: 12,
             paddingHorizontal: 10,
             paddingVertical: 4,
             marginTop: 8,
           }}
         >
-          <Text style={{ fontSize: 12, color: '#4F46E5' }}>{task.category}</Text>
+          <Text style={{ fontSize: 12, color: colors.primary }}>{task.category}</Text>
         </View>
       )}
 
       <View style={{ marginTop: 12 }}>
         {task.due_date && (
-          <Text style={{ color: '#666' }}>📅 {new Date(task.due_date).toLocaleDateString()}</Text>
+          <Text style={{ color: colors.textMuted }}>📅 {new Date(task.due_date).toLocaleDateString()}</Text>
         )}
         {task.reminder_time && (
-          <Text style={{ color: '#666', marginTop: 2 }}>
+          <Text style={{ color: colors.textMuted, marginTop: 2 }}>
             🕐 {new Date(task.reminder_time).toLocaleTimeString()}
           </Text>
         )}
-        {isOverdue && <Text style={{ color: '#B45309', marginTop: 4, fontSize: 12 }}>Overdue</Text>}
+        {isOverdue && <Text style={{ color: colors.danger, marginTop: 4, fontSize: 12 }}>Overdue</Text>}
       </View>
 
       {task.description && (
         <View style={{ marginTop: 20 }}>
-          <Text style={{ fontWeight: '600', marginBottom: 4 }}>Description</Text>
-          <Text style={{ color: '#444' }}>{task.description}</Text>
+          <Text style={{ fontWeight: '600', marginBottom: 4, color: colors.text }}>Description</Text>
+          <Text style={{ color: colors.text }}>{task.description}</Text>
         </View>
       )}
 
-      <View style={{ marginTop: 20, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 16 }}>
+      <View style={{ marginTop: 20, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
         <TouchableOpacity onPress={handleBreakdown} disabled={breakdownLoading}>
-          <Text style={{ fontWeight: '600' }}>
+          <Text style={{ fontWeight: '600', color: colors.text }}>
             {breakdownLoading ? 'Thinking…' : '✨ Make it easier'}
           </Text>
-          <Text style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
+          <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
             Break this task into smaller steps if it feels overwhelming.
           </Text>
         </TouchableOpacity>
@@ -147,35 +152,35 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         {steps && (
           <View style={{ marginTop: 12 }}>
             {steps.map((s, i) => (
-              <Text key={i} style={{ marginBottom: 6 }}>
+              <Text key={i} style={{ marginBottom: 6, color: colors.text }}>
                 ○ {s.title}
               </Text>
             ))}
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
               <TouchableOpacity>
-                <Text style={{ color: '#4F46E5', fontWeight: '600' }}>Add all steps</Text>
+                <Text style={{ color: colors.primary, fontWeight: '600' }}>Add all steps</Text>
               </TouchableOpacity>
               <TouchableOpacity>
-                <Text style={{ color: '#4F46E5' }}>Add first step</Text>
+                <Text style={{ color: colors.primary }}>Add first step</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
       </View>
 
-      <View style={{ marginTop: 24, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 16 }}>
+      <View style={{ marginTop: 24, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
         <TouchableOpacity
           onPress={handleMarkDone}
           disabled={actionLoading === 'done'}
           style={{
-            backgroundColor: '#4F46E5',
+            backgroundColor: colors.primary,
             borderRadius: 10,
             padding: 14,
             alignItems: 'center',
             marginBottom: 10,
           }}
         >
-          <Text style={{ color: '#fff', fontWeight: '600' }}>
+          <Text style={{ color: colors.surface, fontWeight: '600' }}>
             {actionLoading === 'done' ? 'Marking done…' : '✓ Mark as done'}
           </Text>
         </TouchableOpacity>
@@ -186,12 +191,12 @@ export default function TaskDetailScreen({ route, navigation }: any) {
           </TouchableOpacity>
         ) : (
           <View style={{ marginBottom: 10, gap: 8 }}>
-            <Text style={{ color: '#666', fontSize: 12 }}>When should we try again?</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 12 }}>When should we try again?</Text>
             <TouchableOpacity onPress={() => handleNotNow('later_today')}>
-              <Text>Later today</Text>
+              <Text style={{ color: colors.text }}>Later today</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => handleNotNow('tomorrow')}>
-              <Text>Tomorrow</Text>
+              <Text style={{ color: colors.text }}>Tomorrow</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -199,6 +204,82 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         <TouchableOpacity onPress={handleReschedule}>
           <Text>📅 Reschedule</Text>
         </TouchableOpacity>
+        {task.series_id && (
+          <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 }}>
+            {!editingSeries ? (
+              <TouchableOpacity onPress={() => { setSeriesTitle(task.title); setEditingSeries(true); }}>
+                <Text style={{ color: colors.primary, fontWeight: '600' }}>Edit recurring task</Text>
+              </TouchableOpacity>
+            ) : (
+              <View>
+                <Text style={{ color: colors.text, fontWeight: '600', marginBottom: 8 }}>Change title</Text>
+                <TextInput
+                  value={seriesTitle}
+                  onChangeText={setSeriesTitle}
+                  maxLength={300}
+                  placeholder="Task title"
+                  placeholderTextColor={colors.textMuted}
+                  style={{ color: colors.text, borderColor: colors.border, borderWidth: 1, borderRadius: 8, padding: 10, marginBottom: 8 }}
+                />
+                <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 8 }}>Apply this change to:</Text>
+                {([
+                  ['occurrence', 'Only this occurrence'],
+                  ['this_and_future', 'This and future occurrences'],
+                  ['entire_series', 'Entire series'],
+                ] as [SeriesEditScope, string][]).map(([scope, label]) => (
+                  <TouchableOpacity
+                    key={scope}
+                    disabled={seriesEditLoading || !seriesTitle.trim()}
+                    onPress={async () => {
+                      setSeriesEditLoading(true);
+                      try {
+                        const updated = await editTaskSeries(task.id, scope, {
+                          title: seriesTitle.trim(), description: task.description, priority: task.priority,
+                        });
+                        setTask(updated);
+                        setEditingSeries(false);
+                      } catch {
+                        Alert.alert("Couldn't update this recurring task", 'Please try again.');
+                      } finally {
+                        setSeriesEditLoading(false);
+                      }
+                    }}
+                    style={{ paddingVertical: 10, opacity: seriesEditLoading || !seriesTitle.trim() ? 0.5 : 1 }}
+                  >
+                    <Text style={{ color: colors.primary }}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity onPress={() => setEditingSeries(false)}>
+                  <Text style={{ color: colors.textMuted, paddingVertical: 8 }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <TouchableOpacity
+            style={{ marginTop: 14 }}
+            onPress={() => Alert.alert(
+              'Stop recurring task?',
+              'Future occurrences will be cancelled. This occurrence and its history will remain.',
+              [
+                { text: 'Keep series', style: 'cancel' },
+                {
+                  text: 'Stop series',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await stopTaskSeries(task.id);
+                      navigation.goBack();
+                    } catch {
+                      Alert.alert("Couldn't stop the series", 'Please try again.');
+                    }
+                  },
+                },
+              ],
+            )}
+          >
+            <Text style={{ color: colors.danger }}>Stop entire series</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </ScrollView>
   );

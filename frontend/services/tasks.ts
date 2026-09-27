@@ -17,6 +17,16 @@ interface TaskInput {
   due_date?: string;
   reminder_time?: string;
   recurrence?: string;
+  recurrence_rule?: {
+    frequency: 'daily' | 'weekly' | 'monthly';
+    interval?: number;
+    days_of_week?: number[];
+    start_date: string;
+    local_time?: string;
+    timezone?: string;
+    end_date?: string;
+    occurrence_limit?: number;
+  };
 }
 
 export async function createTask(input: TaskInput): Promise<Task> {
@@ -166,6 +176,35 @@ export async function cancelTask(taskId: string): Promise<Task> {
   return task;
 }
 
+export type VoiceTaskParse = {
+  title: string;
+  due_date: string | null;
+  time: string | null;
+  priority: 'low' | 'medium' | 'high';
+};
+
+export async function parseVoiceTask(transcript: string): Promise<VoiceTaskParse> {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const response = await fetch(`${API_BASE_URL}/api/tasks/parse-voice`, {
+    method: 'POST',
+    headers: await getAuthHeader(),
+    body: JSON.stringify({ transcript, today }),
+  });
+  if (!response.ok) throw new Error("Couldn't understand that. Please try again.");
+  return response.json();
+}
+
+export type UpcomingReminderTask = Pick<Task, 'id' | 'title' | 'reminder_time'>;
+
+export async function getUpcomingTasks(days = 14): Promise<UpcomingReminderTask[]> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/upcoming?days=${days}`, {
+    headers: await getAuthHeader(),
+  });
+  if (!response.ok) throw new Error("Couldn't sync upcoming reminders.");
+  return response.json();
+}
+
 export async function getCalendarDates(year: number, month: number): Promise<string[]> {
   const res = await fetch(`${API_BASE_URL}/api/tasks/calendar-dates?year=${year}&month=${month}`, {
     headers: await getAuthHeader(),
@@ -181,4 +220,28 @@ export async function getTasksByDate(dateStr: string, filter: string = 'all'): P
   });
   if (!res.ok) throw new Error("Couldn't load tasks.");
   return res.json();
+}
+
+export async function stopTaskSeries(taskId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/stop-series`, {
+    method: 'POST',
+    headers: await getAuthHeader(),
+  });
+  if (!response.ok) throw new Error("Couldn't stop this recurring series.");
+}
+
+export type SeriesEditScope = 'occurrence' | 'this_and_future' | 'entire_series';
+
+export async function editTaskSeries(
+  taskId: string,
+  scope: SeriesEditScope,
+  changes: { title: string; description?: string | null; priority: 'low' | 'medium' | 'high' },
+): Promise<Task> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/series-edit`, {
+    method: 'PATCH',
+    headers: { ...(await getAuthHeader()), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope, ...changes }),
+  });
+  if (!response.ok) throw new Error("Couldn't update this recurring task.");
+  return response.json();
 }

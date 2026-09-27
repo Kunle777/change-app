@@ -1,9 +1,9 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import JSON, String, DateTime, ForeignKey, Table,Enum as SQLEnum, func
+from sqlalchemy import JSON, String, DateTime, Date, Integer, ForeignKey, Table,Enum as SQLEnum, func
 from app.database import Base 
 
 # app/users/models.py — additions
@@ -55,3 +55,7 @@ class User(Base):
     country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
     first_name: Mapped[str | None] = mapped_column(String, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    current_streak: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    longest_streak: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_active_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    last_active_timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)

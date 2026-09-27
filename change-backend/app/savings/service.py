@@ -13,7 +13,7 @@ from app.savings.models import (
     PlatformRevenue,
 )
 from app.savings.paystack_client import paystack_request, PaystackError
-from app.users.models import User
+from app.Users.models import User
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from datetime import timezone, timedelta

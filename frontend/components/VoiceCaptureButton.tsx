@@ -9,9 +9,10 @@ import {
 
 type Props = {
   onTranscript: (text: string) => void;
+  onFinalTranscript?: (text: string) => void;
 };
 
-export default function VoiceCaptureButton({ onTranscript }: Props) {
+export default function VoiceCaptureButton({ onTranscript, onFinalTranscript }: Props) {
   const [isListening, setIsListening] = useState(false);
 
   // These hooks subscribe to native events for as long as this component
@@ -24,7 +25,10 @@ export default function VoiceCaptureButton({ onTranscript }: Props) {
     // Android can return multiple final results across a session — always
     // take the latest one, don't assume result[0] is the whole transcript.
     const latest = event.results[0]?.transcript;
-    if (latest) onTranscript(latest);
+    if (latest) {
+      onTranscript(latest);
+      if (event.isFinal) onFinalTranscript?.(latest);
+    }
   });
 
   useSpeechRecognitionEvent('error', (event) => {
