@@ -1,0 +1,66 @@
+/** Short, optional check-in prompts. Keep these inviting rather than demanding. */
+export const MORNING_PROMPTS = [
+  'What would make today feel a little more manageable?',
+  'What is one thing you would like to give your attention to today?',
+  'What is a small first step you could take when you are ready?',
+  'What can wait until later, so you can focus on what matters now?',
+  'What would “good enough” look like for one thing today?',
+  'What might help you feel supported today?',
+  'What is one thing you are looking forward to, however small?',
+  'If today gets busy, what is one priority you want to protect?',
+  'What is something you can make easier for yourself today?',
+  'What would you like to remember when the day feels demanding?',
+  'Is there one person you would like to connect with today?',
+  'What is one kind thing you can do for yourself today?',
+  'What can you begin for just five minutes?',
+  'What would help you feel ready to start your day?',
+  'What is one thing you can let be imperfect today?',
+  'What does your energy feel like this morning, and what pace fits it?',
+  'What is one small win you could make possible today?',
+  'What would make the next hour feel useful or restful?',
+];
+
+export const ANTI_PROCRASTINATION_PROMPTS = [
+  'Could you make the first step smaller?',
+  'What is one action that would take less than two minutes?',
+  'Would it help to open the task and decide what comes next?',
+  'What part of this can you do with the energy you have right now?',
+  'Try setting a five-minute timer; stopping when it ends is okay.',
+  'What would a rough first draft or version look like?',
+  'Is there anything you need before this task feels easier to begin?',
+  'Could you ask someone for a little help or clarity?',
+  'What is the next visible action, rather than the whole outcome?',
+  'Would a short break help you return with a clearer head?',
+  'What is one open loop you could close gently today?',
+  'What would you tell a friend who was finding this hard to start?',
+];
+
+export const EVENING_LOW_MOOD_PROMPTS = [
+  'What would feel comforting or calming right now?',
+  'Is there someone safe you could reach out to, even with a short message?',
+  'What is one small thing that helped you get through today?',
+  'Would water, food, fresh air, or a little rest help in this moment?',
+  'What would you say to someone you care about who felt this way?',
+  'You do not have to solve everything tonight. What can wait until tomorrow?',
+  'What is one thing you did today that took effort?',
+  'Would changing rooms, stretching, or listening to a song help a little?',
+  'What is the kindest realistic thing you can do for yourself tonight?',
+  'Is there a small source of comfort you can make room for now?',
+  'What felt difficult today, without judging yourself for finding it difficult?',
+  'What would help you feel a little safer or more settled before bed?',
+  'Can you name one thing you need, even if you cannot meet it just yet?',
+  'What is one gentle thing you can leave for your future self?',
+];
+
+export const EVENING_FINE_MOOD_PROMPTS = [
+  'What is one moment from today you would like to remember?',
+  'What went a little better than you expected?',
+  'Who or what made today easier?',
+  'What is one small thing you are glad you did?',
+  'What did you learn about what works well for you?',
+  'What would you like to carry from today into tomorrow?',
+  'What is something you handled in a way you feel good about?',
+  'What is one thing you appreciate about today?',
+  'What helped you feel most like yourself today?',
+  'What is something you can give yourself credit for?',
+];

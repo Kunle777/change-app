@@ -1,0 +1,8 @@
+{
+  "python.analysis.extraPaths": [
+    "./",
+    "./change-backend"
+  ],
+  "python.defaultInterpreterPath": "c:/Users/Abdulrazaq/Desktop/CHANGE/change-backend/venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true
+}

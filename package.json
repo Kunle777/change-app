@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@react-navigation/bottom-tabs": "^7.18.17",
+    "expo": "^57.0.27"
+  },
+  "devDependencies": {
+    "react-native-svg-transformer": "^1.5.3"
+  }
+}

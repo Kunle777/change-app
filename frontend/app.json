@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "frontend",
+    "slug": "change",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "elvyn",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "com.ktlabs.elvyn"
+    },
+    "android": {
+      "package": "com.kunletech.change",
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#208AEF",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png"
+        }
+      ],
+      "./plugins/withNotificationManifestFix.js",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Change to use the microphone for voice capture in Brain Dump.",
+          "speechRecognitionPermission": "Allow Change to use speech recognition to transcribe your Brain Dump."
+        }
+      ],
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-localization"
+    ],
+    "experiments": {
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d401dd85-2e8f-472b-a212-7ab9c0ec90d5"
+      }
+    }
+  }
+}

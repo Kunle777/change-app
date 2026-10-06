@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "434482160147",
+    "project_id": "change-9a53a",
+    "storage_bucket": "change-9a53a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:434482160147:android:80a34227db7f1aae5fd5e6",
+        "android_client_info": {
+          "package_name": "com.kunletech.change"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3iWubUUkuA-RqBRQA0p3BCR59nNZb9E4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
