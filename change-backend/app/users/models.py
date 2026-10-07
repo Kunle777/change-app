@@ -8,13 +8,6 @@ from app.database import Base
 
 # app/users/models.py — additions
 
-class KYCStatus(str, enum.Enum):
-    unverified = "unverified"
-    pending = "pending"
-    verified = "verified"
-    failed = "failed"
-
-
 class UserTier(str, enum.Enum):
     free = "free"
     premium = "premium"
@@ -38,19 +31,9 @@ class User(Base):
     # remove email and password_hash entirely — Supabase Auth owns these now
 
 
-    paystack_customer_code: Mapped[str | None] = mapped_column(String, nullable=True)
-    dva_account_number: Mapped[str | None] = mapped_column(String, nullable=True)
-    dva_bank_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    dva_account_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    paystack_recipient_code: Mapped[str | None] = mapped_column(String, nullable=True)
-    payout_bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
-    payout_account_number: Mapped[str | None] = mapped_column(String, nullable=True)
-    payout_account_name: Mapped[str | None] = mapped_column(String, nullable=True)  # from Paystack's own verification, not user-typed
     
-    kyc_status: Mapped[KYCStatus] = mapped_column(
         SQLEnum(KYCStatus, name="kyc_status"), nullable=False, server_default=KYCStatus.unverified.value
     )
-    kyc_verified_name: Mapped[str | None] = mapped_column(String, nullable=True)  # set ONLY by the webhook, never directly
 
     country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
     first_name: Mapped[str | None] = mapped_column(String, nullable=True)

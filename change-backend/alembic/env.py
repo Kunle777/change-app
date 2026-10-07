@@ -41,10 +41,9 @@ from app.database import Base
 from app.users.models import User, UserTier
 from app.tasks.models import Task, TaskEvent, TaskEventOutbox, TaskSeries  # noqa: F401
 from app.braindump.models import BrainDump
-from app.ai.models import AIUsageLog, AIInteraction  # noqa: F401
+from app.ai.models import AIUsageLog, AIInteraction, Conversation, PendingAction  # noqa: F401
 from app.wins.models import Win  # noqa: F401
 from app.checkins.models import CheckInType
-from app.savings.models import SavingsVault
 from app.users.entitlements_models import FeatureEntitlements
 
 target_metadata = Base.metadata

@@ -19,7 +19,6 @@ from app.users.routers import router as users_router
 from app.users.security import limiter
 from app.ai.routers import router as ai_router
 from app.wins.routers import router as wins_router
-from app.savings.routers import router as savings_router
 
 
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +39,6 @@ app.include_router(braindump_router)
 app.include_router(checkins_router)
 app.include_router(ai_router)
 app.include_router(wins_router)
-app.include_router(savings_router)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):

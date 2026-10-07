@@ -7,7 +7,6 @@ class CountryUpdate(BaseModel):
 
 class EntitlementsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    savings_enabled: bool
     ai_enabled: bool
     brain_dump_enabled: bool
     premium: bool

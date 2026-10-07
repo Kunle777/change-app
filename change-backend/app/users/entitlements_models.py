@@ -19,7 +19,6 @@ class FeatureEntitlements(Base):
         unique=True,
         index=True,
     )
-    savings_enabled: Mapped[bool] = mapped_column(Boolean, server_default="false")
     ai_enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
     brain_dump_enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
     premium: Mapped[bool] = mapped_column(Boolean, server_default="false")

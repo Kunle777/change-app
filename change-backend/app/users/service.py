@@ -74,10 +74,6 @@ async def set_country_code(
     user.country_code = country_code
 
     ent = await get_or_create_entitlements(db, user_id)
-    # This is the actual enforcement point: server-side, stored, not
-    # re-derived from device locale/GPS on every request.
-    ent.savings_enabled = country_code == "NG"
-
     await db.commit()
     await db.refresh(ent)
     return ent

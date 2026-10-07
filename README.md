@@ -15,9 +15,9 @@ September 2026 — Revision 5 (Post–Phase 5 / Phase 6 In Progress)
 
 ## 1. Executive Summary
 
-Elvyn (originally built and shipped internally under the working name "Change") is a personal mobile application designed and built by AbdulRazaq to address four recurring problems in daily life: forgetfulness, procrastination, disorganization, and inconsistent savings habits. It is architected as a full-stack solo software project — a genuine production system, not a prototype — and simultaneously serves as a deliberate vehicle for deepening real-world skills in backend engineering, mobile development, and applied artificial intelligence.
+Elvyn (originally built and shipped internally under the working name "Change") is a personal mobile application designed and built by AbdulRazaq to address four recurring problems in daily life: forgetfulness, procrastination, and disorganization. It is architected as a full-stack solo software project — a genuine production system, not a prototype — and simultaneously serves as a deliberate vehicle for deepening real-world skills in backend engineering, mobile development, and applied artificial intelligence.
 
-Elvyn combines five core pillars: an intelligent task and reminder system with per-task priority notification control; a frictionless capture layer ("Brain Dump") for offloading thoughts before they need to be organized; a mood-aware check-in system; a Retrieval-Augmented Generation (RAG)-bound AI coaching layer, currently in its foundational single-turn phase; and — pending regulatory clearance — a locked savings vault enforcing financial discipline through goal-based commitment and a cooling-off mechanism on early withdrawal.
+Elvyn combines four core pillars: task and reminder management; Brain Dump capture; mood-aware check-ins; and a task-grounded AI coaching layer.
 
 The product was renamed from "Change" to "Elvyn" mid-build once it became clear the original name was tied to the founder's personal motivation rather than a name that would generalize to other users. The rename came with a full brand identity: a folded-ribbon "E" mark, an indigo/amber/emerald color system, and a small two-state illustrated mascot used to give the AI coaching layer a consistent, non-childish visual personality.
 
@@ -34,7 +34,7 @@ As of this revision, **Phases 1 through 5 are complete**, and **Phase 6 (Retriev
 | **Founder / brand identity** | KunleTech |
 | **Legal entity** | K.T Labs Ltd |
 | **Platform (current)** | Android (React Native / Expo); iOS deliberately out of scope until real demand or resourcing exists |
-| **Market** | General productivity/AI-coaching audience; Savings feature is Nigeria-specific |
+| **Market** | General productivity and AI-coaching audience |
 
 **Visual identity:**
 
@@ -61,7 +61,6 @@ The motivation for Elvyn is personal in origin, generalized deliberately during 
 | Lack of self check-in | Lightweight, optional morning/evening mood check-ins, never mandatory |
 | Procrastination | AI-assisted task breakdown ("Make it easier"), always user-initiated, never automatic |
 | Disorganization | Frictionless capture (Brain Dump) separated cleanly from structured task management |
-| Poor savings discipline | A goal-locked savings vault with a cooling-off period on early withdrawal (Nigeria-only, pending Paystack business verification) |
 
 A further, explicit design principle carried through the entire build: **calm over crowded, action over administration, evidence over assumption, no shame.** Concretely, this means the product never labels a user's behavior (e.g. it will never store or surface a judgment like "procrastinator"), never auto-executes AI-suggested actions without confirmation, and treats a missed task or broken streak as neutral information rather than a failure state.
 
@@ -80,7 +79,6 @@ A further, explicit design principle carried through the entire build: **calm ov
 | Authentication | Supabase Auth (migrated from a custom JWT implementation in Phase 2) |
 | Background jobs | Celery + Redis (Upstash) |
 | AI | Google Gemini, via a server-side structured-output wrapper |
-| Payments (pending) | Paystack — Nigeria-specific, gated behind business account verification |
 | Push notifications | Expo local notifications (primary, offline-capable) + Firebase Cloud Messaging (server-originated fallback only) |
 | Icon/vector assets | `react-native-svg` |
 | Calendar UI | `react-native-calendars` |
@@ -96,7 +94,7 @@ The backend follows a domain-based folder structure (`app/users/`, `app/tasks/`,
 - Row Level Security is enabled on Supabase as defense-in-depth, verified directly against the live project.
 - Every data-owning query is filtered by `user_id`, not merely by record ID — UUID unguessability is treated as an implementation detail, never as authorization.
 - The Gemini API key is server-side only and never shipped in the client application.
-- The AI layer cannot access savings/financial data or execute any financial operation under any circumstance — this boundary is architectural, not merely a prompt instruction.
+- The AI layer cannot access financial account data or execute financial operations.
 - AI-invoked actions (once function-calling ships in a later phase) will always be executed by FastAPI after independent ownership and authorization checks — the model itself is never granted direct database access.
 
 ---
@@ -107,7 +105,7 @@ The backend follows a domain-based folder structure (`app/users/`, `app/tasks/`,
 
 | Table | Purpose |
 |---|---|
-| `users` | Identity, country/entitlement linkage, notification/appearance preferences, Paystack/DVA/payout profile fields (pending activation), activity-streak fields |
+| `users` | Identity, country/entitlement linkage, notification/appearance preferences, and activity-streak fields |
 | `tasks` | Task records — typed priority/status, soft-delete (`is_deleted`/`deleted_at`), per-task `priority_reminder`, recurrence linkage (`series_id`, `occurrence_date`), Brain Dump provenance (`source_brain_dump_id`) |
 | `task_series` | Recurring-task rule definitions (frequency, interval, days of week, end conditions) |
 | `task_events` | Append-only behavioral event log (`created`, `completed`, `not_now`, `rescheduled`, `cancelled`, `overdue`, `deadline_changed`, `reminder_scheduled`, `reminder_opened`) with JSONB metadata |
@@ -117,8 +115,7 @@ The backend follows a domain-based folder structure (`app/users/`, `app/tasks/`,
 | `wins` | Lightweight freeform positive-moment log (legacy, superseded in relevance by the activity-streak system) |
 | `ai_usage_logs` | Per-user daily AI request quota tracking |
 | `ai_interactions` | Logged AI exchanges — intent, context size, token counts, tool usage, outcome |
-| `feature_entitlements` | Server-enforced per-user feature flags (`savings_enabled`, `ai_enabled`, `brain_dump_enabled`, `premium`) — the actual mechanism behind the Nigeria-only Money tab |
-| `savings_vaults`, `pending_deposits`, `savings_transactions`, `platform_revenue` | Savings/Paystack domain — architecturally complete, gated on Paystack business verification before real-money use |
+| `feature_entitlements` | Server-enforced per-user AI, Brain Dump, and premium feature flags |
 
 ### 5.2 Notable Schema Decisions
 
@@ -176,11 +173,7 @@ Local, offline-capable scheduled notifications (via Expo) are the primary remind
 
 The current AI screen is a scoped personal coach, not a general-purpose chatbot. An empty-state screen offers suggested prompts oriented around the user's own tasks and progress; a lightweight intent classifier determines what ELVYN-owned data is actually relevant to a given message, so only that data — never a user's entire history — is included in the prompt sent to Gemini. Responses are returned as structured JSON and rendered natively by the client, rather than the model generating free-text descriptions of interface elements. The system is deliberately **single-turn** in this phase: no persistent conversation history exists yet, and no AI-driven task creation, editing, or deletion is exposed — both are explicitly reserved for Phase 6, once genuine behavioral data exists to ground them in.
 
-### 6.10 Money / Savings
-
-Architecturally complete from Phase 4 (vault creation, Paystack Dedicated Virtual Account collection, transfer-based payouts, withdrawal PIN separate from the local app passcode, milestone tracking, break-vault and emergency-withdrawal mechanics) but gated end-to-end on Paystack business account verification, which itself is gated on completed CAC business registration. No real money has moved through the system to date. Feature access is enforced server-side via `feature_entitlements.savings_enabled`, itself derived from a confirmed `country_code = "NG"`, never re-derived from device signals on each request.
-
-### 6.11 Appearance
+### 6.10 Appearance
 
 A theme mechanism (System/Light/Dark, persisted locally) exists and is applied to Home, Task Detail, Brain Dump, and core task components; a full visual retrofit of every remaining screen is intentionally deferred as a separate visual-polish pass, not yet scheduled.
 
@@ -194,7 +187,6 @@ A theme mechanism (System/Light/Dark, persisted locally) exists and is applied t
 | 2 | Task CRUD, Celery-driven reminders, Brain Dump backend | Complete |
 | 3 | Check-ins, direct Gemini integration, habit/confidence log | Complete |
 | 3.5 | Debt-clearing sprint: local notifications, calendar UI, voice capture, EAS build pipeline | Complete |
-| 4 | Savings vault, Paystack integration | Architecturally complete; gated on business verification |
 | 5a | Rebrand to Elvyn; Home/Check-in/Task/Calendar/Brain Dump/AI-screen rebuild; per-task Priority Reminder; dark-mode mechanism; voice task creation; notification reconciliation | **Complete**, confirmed on-device |
 | 5b | Full visual polish pass across all remaining screens | Deferred, unscheduled, non-blocking |
 | 6 | Behavioral event logging (`task_events`), recurring-task-series redesign, activity streak — foundational RAG groundwork | **In progress** — implemented, pending live-database verification |
@@ -216,7 +208,6 @@ Consistent with a standing practice on this project of verifying claims against 
 
 ## 9. Risks & Honest Constraints
 
-- The savings vault's lock is a behavioral deterrent, not a technical barrier — a sufficiently determined user could still withdraw funds directly through Paystack's own systems.
 - Publishing Elvyn beyond a personal/trusted-circle audience introduces obligations (privacy policy, terms of service, eventual regulatory exposure) that do not apply at the current stage.
 - The project's greatest historical risk has never been technical difficulty but sustained follow-through and scope discipline — repeatedly, proposed architecture documents attempted to pull deferred future work (a full mascot evolution system, full conversational AI memory, AI-driven task mutation, a complete behavioral-event system) forward into the current phase before it was actually needed; each instance was caught and deliberately deferred rather than absorbed.
 - Formal independent security review has not occurred and is explicitly scheduled no earlier than Phase 8, ahead of any real external users or real money.

@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getTasks } from './tasks';
 
 const STORAGE_KEY_PREFIX = 'notif_id_for_task_';
 
@@ -51,6 +52,7 @@ export async function scheduleTaskReminder(
   taskId: string,
   title: string,
   reminderDate: Date,
+  priorityReminder = false,
 ): Promise<string | null> {
   if (Platform.OS === 'web' || !Device.isDevice) return null;
   if (!(reminderDate instanceof Date) || !Number.isFinite(reminderDate.getTime())) return null;
@@ -61,9 +63,10 @@ export async function scheduleTaskReminder(
 
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Task Reminder',
+      title: priorityReminder ? 'Priority task reminder' : 'Task reminder',
       body: title,
       sound: true,
+      data: { type: 'task_reminder', taskId },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -90,4 +93,58 @@ export async function rescheduleTaskReminder(
 ): Promise<string | null> {
   await cancelTaskReminder(taskId);
   return scheduleTaskReminder(taskId, title, newReminderDate);
+}
+
+export async function clearTaskReminders(): Promise<void> {
+  const keys = (await AsyncStorage.getAllKeys()).filter((key) =>
+    key.startsWith(STORAGE_KEY_PREFIX),
+  );
+  const entries = await AsyncStorage.multiGet(keys);
+  await Promise.allSettled(
+    entries
+      .map(([, notificationId]) => notificationId)
+      .filter((notificationId): notificationId is string => Boolean(notificationId))
+      .map((notificationId) => Notifications.cancelScheduledNotificationAsync(notificationId)),
+  );
+  if (keys.length) await AsyncStorage.multiRemove(keys);
+}
+
+type ReminderTask = {
+  id: string;
+  title: string;
+  reminder_time?: string | null;
+  status?: string | null;
+  is_deleted?: boolean;
+};
+
+export async function reconcileNotifications(): Promise<void> {
+  if (Platform.OS === 'web' || !Device.isDevice) return;
+
+  const tasks = (await getTasks()) as ReminderTask[];
+  const activeTasks = tasks.filter(
+    (task) =>
+      !task.is_deleted &&
+      task.status !== 'completed' &&
+      task.status !== 'cancelled' &&
+      Boolean(task.reminder_time),
+  );
+  const activeIds = new Set(activeTasks.map((task) => task.id));
+  const storedKeys = (await AsyncStorage.getAllKeys()).filter((key) =>
+    key.startsWith(STORAGE_KEY_PREFIX),
+  );
+  const staleIds = storedKeys
+    .map((key) => key.slice(STORAGE_KEY_PREFIX.length))
+    .filter((taskId) => !activeIds.has(taskId));
+
+  await Promise.all(staleIds.map((taskId) => cancelTaskReminder(taskId)));
+  await Promise.all(
+    activeTasks.map(async (task) => {
+      const reminderDate = task.reminder_time ? new Date(task.reminder_time) : null;
+      if (!reminderDate || !Number.isFinite(reminderDate.getTime())) {
+        await cancelTaskReminder(task.id);
+        return;
+      }
+      await rescheduleTaskReminder(task.id, task.title, reminderDate);
+    }),
+  );
 }
