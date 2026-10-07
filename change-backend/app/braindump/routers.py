@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.Users.models import User
-from app.Users.dependencies import get_current_user
+from app.users.models import User
+from app.users.dependencies import get_current_user
 from app.braindump.schemas import (
     BrainDumpCreate,
     BrainDumpResponse,
@@ -14,6 +14,7 @@ from app.braindump.schemas import (
 from app.braindump import service
 from app.tasks.schemas import TaskResponse
 from app.ai import service as ai_service
+from app.braindump.detector import looks_like_possible_task
 
 router = APIRouter(prefix="/api/braindump", tags=["Brain Dump"])
 
@@ -21,11 +22,20 @@ TaskResponseModel = TaskResponse
 
 @router.post("", response_model=BrainDumpResponse)
 async def create_dump_route(data: BrainDumpCreate, db=Depends(get_db), current_user=Depends(get_current_user)):
-    return await service.create_brain_dump(db, data, current_user.id)
+    dump = await service.create_brain_dump(db, data, current_user.id)
+    response = BrainDumpResponse.model_validate(dump)
+    response.possible_task = looks_like_possible_task(dump.content)
+    return response
 
 @router.get("", response_model=list[BrainDumpResponse])
 async def get_dumps_route(db=Depends(get_db), current_user=Depends(get_current_user)):
-    return await service.get_brain_dumps_for_user(db, current_user.id)
+    dumps = await service.get_brain_dumps_for_user(db, current_user.id)
+    responses = []
+    for dump in dumps:
+        response = BrainDumpResponse.model_validate(dump)
+        response.possible_task = looks_like_possible_task(dump.content)
+        responses.append(response)
+    return responses
 
 @router.delete("/{dump_id}")
 async def delete_dump_route(dump_id: uuid.UUID, db=Depends(get_db), current_user=Depends(get_current_user)):
@@ -36,10 +46,8 @@ async def delete_dump_route(dump_id: uuid.UUID, db=Depends(get_db), current_user
 
 @router.post("/{dump_id}/parse", response_model=ParseDumpResponse)
 async def parse_dump_route(dump_id: uuid.UUID, db=Depends(get_db), current_user=Depends(get_current_user)):
-    try:
-        await ai_service.check_usage(db, current_user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+    if not await ai_service.check_usage(db, current_user.id):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily AI limit reached")
 
     try:
         result = await service.parse_dump(db, dump_id, current_user.id)

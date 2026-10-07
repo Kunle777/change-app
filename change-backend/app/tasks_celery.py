@@ -17,7 +17,6 @@ from app.tasks.models import TaskEventType
 from app.tasks.task_event_service import log_task_event
 from sqlalchemy import select, and_
 from fcm import send_push_notification
-from app.savings.service import check_and_process_matured_vaults
 
 
 async def _check_reminders_async():
@@ -146,6 +145,3 @@ def say_hello(name: str):
     print(f"Sending hello to {name}")
     return f"Hello, {name}!"
 
-@celery_app.task
-def process_matured_vaults():
-    asyncio.run(check_and_process_matured_vaults())

@@ -71,7 +71,13 @@ def _utc(dt: datetime | None) -> datetime | None:
         return None
     return dt.astimezone(timezone.utc)
 
-async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUID):
+async def create_task(
+    db: AsyncSession,
+    task_data: TaskCreate,
+    user_id: uuid.UUID,
+    *,
+    commit: bool = True,
+):
     rule = task_data.recurrence_rule
     series = None
     if rule is not None:
@@ -107,6 +113,7 @@ async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUI
         title=task_data.title,
         priority=task_data.priority,
         status=task_data.status,
+        priority_reminder=task_data.priority_reminder,
         description=task_data.description,
         due_date=_utc(due_date),
         reminder_time=_utc(reminder_time),
@@ -122,8 +129,11 @@ async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUI
         task_id=db_task.id,
         event_type=TaskEventType.CREATED,
     )
-    await db.commit()
-    await db.refresh(db_task)
+    if commit:
+        await db.commit()
+        await db.refresh(db_task)
+    else:
+        await db.flush()
     return db_task
 
 async def get_tasks_for_user(db: AsyncSession, user_id: uuid.UUID):
@@ -156,17 +166,31 @@ async def get_upcoming_tasks(db: AsyncSession, user_id: uuid.UUID, days: int = 1
     )
     return result.scalars().all()
 
-async def get_task_by_id(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
-    result = await db.execute(
-        select(Task).where(
-            Task.id == task_id,
-            Task.user_id == user_id,
-            Task.is_deleted.is_(False),
-        )
+async def get_task_by_id(
+    db: AsyncSession,
+    task_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+):
+    query = select(Task).where(
+        Task.id == task_id,
+        Task.user_id == user_id,
+        Task.is_deleted.is_(False),
     )
+    if for_update:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    result = await db.execute(query)
     return result.scalar_one_or_none()
     
-async def update_task(db: AsyncSession, task_id: uuid.UUID, task_data: TaskUpdate, user_id: uuid.UUID):
+async def update_task(
+    db: AsyncSession,
+    task_id: uuid.UUID,
+    task_data: TaskUpdate,
+    user_id: uuid.UUID,
+    *,
+    commit: bool = True,
+):
     db_task = await get_task_by_id(db, task_id, user_id)
     if not db_task:
         return None
@@ -221,9 +245,13 @@ async def update_task(db: AsyncSession, task_id: uuid.UUID, task_data: TaskUpdat
                 "new_reminder_time": db_task.reminder_time.isoformat() if db_task.reminder_time else None,
             },
         )
-    await db.commit()
-    await db.refresh(db_task)
+    if commit:
+        await db.commit()
+        await db.refresh(db_task)
+    else:
+        await db.flush()
     return db_task
+
 
 async def delete_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
     db_task = await get_task_by_id(db, task_id, user_id)
@@ -442,7 +470,13 @@ async def reschedule_task(db: AsyncSession, task_id, user_id, due_date, reminder
     await db.refresh(task)
     return task
 
-async def cancel_task(db: AsyncSession, task_id, user_id) -> Task | None:
+async def cancel_task(
+    db: AsyncSession,
+    task_id,
+    user_id,
+    *,
+    commit: bool = True,
+) -> Task | None:
     task = await get_task_by_id(db, task_id, user_id)
     if not task:
         return None
@@ -456,8 +490,11 @@ async def cancel_task(db: AsyncSession, task_id, user_id) -> Task | None:
             task_id=task.id,
             event_type=TaskEventType.CANCELLED,
         )
-    await db.commit()
-    await db.refresh(task)
+    if commit:
+        await db.commit()
+        await db.refresh(task)
+    else:
+        await db.flush()
     return task
 
 

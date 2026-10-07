@@ -14,12 +14,11 @@ from app.database import get_db
 from app.braindump.routers import router as braindump_router
 from app.checkins.routers import router as checkins_router
 from app.tasks.routers import router as tasks_router
-from app.Users.models import User
-from app.Users.routers import router as users_router
-from app.Users.security import limiter
+from app.users.models import User
+from app.users.routers import router as users_router
+from app.users.security import limiter
 from app.ai.routers import router as ai_router
 from app.wins.routers import router as wins_router
-from app.savings.routers import router as savings_router
 
 
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +39,6 @@ app.include_router(braindump_router)
 app.include_router(checkins_router)
 app.include_router(ai_router)
 app.include_router(wins_router)
-app.include_router(savings_router)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):

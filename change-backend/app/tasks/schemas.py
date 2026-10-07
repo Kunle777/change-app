@@ -59,6 +59,7 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     due_date: Optional[datetime] = None
     reminder_time: Optional[datetime] = None
+    priority_reminder: bool = False
     recurrence: Optional[RecurrenceEnum] = None
     recurrence_rule: TaskRecurrenceCreate | None = None
 
@@ -82,6 +83,7 @@ class TaskResponse(BaseModel):
     description: Optional[str]
     due_date: Optional[datetime]
     reminder_time: Optional[datetime]
+    priority_reminder: bool = False
     recurrence: Optional[str]
     series_id: UUID | None = None
     occurrence_date: date | None = None
@@ -99,6 +101,7 @@ class TaskUpdate(BaseModel):
     description: Optional[str] = None
     due_date: Optional[datetime] = None
     reminder_time: Optional[datetime] = None
+    priority_reminder: Optional[bool] = None
     recurrence: Optional[RecurrenceEnum] = None
 
     @field_validator('priority', 'status', 'recurrence', mode='before')

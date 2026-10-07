@@ -182,7 +182,7 @@ class TaskEventServiceTests(unittest.IsolatedAsyncioTestCase):
         event_result = Mock()
         event_result.all.return_value = [(task_id, due_date.isoformat())]
         db = SimpleNamespace(
-            execute=AsyncMock(side_effect=[task_result, event_result]),
+            execute=AsyncMock(side_effect=[task_result, event_result, event_result]),
             commit=AsyncMock(),
         )
 
@@ -203,7 +203,7 @@ class TaskEventServiceTests(unittest.IsolatedAsyncioTestCase):
         event_result = Mock()
         event_result.all.return_value = []
         db = SimpleNamespace(
-            execute=AsyncMock(side_effect=[task_result, event_result]),
+            execute=AsyncMock(side_effect=[task_result, event_result, event_result]),
             commit=AsyncMock(),
         )
 
@@ -222,3 +222,4 @@ class TaskEventServiceTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

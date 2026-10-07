@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.Users.models import User
-from app.Users.dependencies import get_current_user
+from app.users.models import User
+from app.users.dependencies import get_current_user
 from app.tasks.schemas import (
     CalendarDatesResponse,
     SeriesEditRequest,
@@ -21,7 +21,7 @@ from app.tasks.task_event_service import log_task_event
 from app.ai import service as ai_service
 from app.tasks.voice_parse import parse_voice_task
 from pydantic import BaseModel, Field
-from datetime import date, datetime as dt
+from datetime import date, datetime
 from typing import Literal
 
 router = APIRouter(
@@ -104,7 +104,7 @@ async def tasks_by_date(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    target = dt.strptime(date, "%Y-%m-%d").date()
+    target = datetime.strptime(date, "%Y-%m-%d").date()
     return await service.get_tasks_for_date(db, current_user.id, target, status)
 
 @router.get("/{task_id}", response_model=TaskResponse)
