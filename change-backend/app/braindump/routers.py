@@ -67,7 +67,13 @@ async def convert_dump_route(
     current_user=Depends(get_current_user),
 ):
     suggestions = [item.model_dump() for item in data.suggestions]
-    result = await service.convert_to_task(db, dump_id, current_user.id, suggestions)
+    result = await service.convert_to_task(
+        db,
+        dump_id,
+        current_user.id,
+        suggestions,
+        current_user.last_active_timezone or "Africa/Lagos",
+    )
     if result is None:
         raise HTTPException(status_code=404, detail="Brain dump not found")
 

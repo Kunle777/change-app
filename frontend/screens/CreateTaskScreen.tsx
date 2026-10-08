@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createTask, updateTask, getTaskById } from '../services/tasks';
-import { scheduleTaskReminder, cancelTaskReminder } from '../services/notifications';
 import { requestCalendarPermission, syncTaskToCalendar } from '../services/calendarSync';
 import { TaskPriority, TaskRecurrence } from '../types/task';
 import VoiceCaptureButton from '../components/VoiceCaptureButton';
@@ -50,6 +49,13 @@ function parsePrefillReminder(dueDate?: string, time?: string): Date | undefined
   }
 
   return parseDate(time);
+}
+
+function combineReminderDate(dueDate: Date | undefined, reminderTime: Date): Date {
+  if (!dueDate) return reminderTime;
+  const combined = new Date(dueDate);
+  combined.setHours(reminderTime.getHours(), reminderTime.getMinutes(), 0, 0);
+  return combined;
 }
 
 function isTaskPriority(value?: string): value is TaskPriority {
@@ -133,12 +139,26 @@ export default function CreateTaskScreen({ route, navigation }: any) {
 
     setSaving(true);
     try {
+      const dueDateEndOfDay = dueDate
+        ? new Date(
+            dueDate.getFullYear(),
+            dueDate.getMonth(),
+            dueDate.getDate(),
+            23,
+            59,
+            59,
+            999,
+          )
+        : undefined;
+      const reminderDateForSave = reminderTime
+        ? combineReminderDate(dueDate, reminderTime)
+        : undefined;
       const payload = {
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
-        due_date: dueDate?.toISOString(),
-        reminder_time: reminderTime?.toISOString(),
+        due_date: dueDateEndOfDay?.toISOString(),
+        reminder_time: reminderDateForSave?.toISOString(),
         recurrence: recurrence === 'none' ? undefined : recurrence,
         priority_reminder: priorityReminder,
         calendar_sync: calendarSyncForSave,
@@ -153,14 +173,7 @@ export default function CreateTaskScreen({ route, navigation }: any) {
 
       const activeTaskId = taskId || savedTask?.id;
 
-      // Local Notification Handling
       if (activeTaskId) {
-        if (reminderTime && reminderTime.getTime() > Date.now()) {
-          await scheduleTaskReminder(activeTaskId, title.trim(), reminderTime, priorityReminder);
-        } else {
-          await cancelTaskReminder(activeTaskId);
-        }
-
         await syncTaskToCalendar({ ...savedTask, id: activeTaskId, calendar_sync: calendarSyncForSave });
       }
 

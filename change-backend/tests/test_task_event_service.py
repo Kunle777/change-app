@@ -14,7 +14,7 @@ os.environ.setdefault(
 
 from app.tasks.models import TaskEvent, TaskEventOutbox, TaskEventType  # noqa: E402
 from app.tasks.task_event_service import deliver_task_event_outbox, log_task_event  # noqa: E402
-from app.tasks.service import record_overdue_task_events  # noqa: E402
+from app.tasks.service import get_undated_tasks, record_overdue_task_events  # noqa: E402
 
 
 class FakeSavepoint(AbstractAsyncContextManager):
@@ -63,6 +63,22 @@ class FakeSession:
 
 
 class TaskEventServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_undated_task_query_returns_only_pending_tasks_without_a_due_date(self):
+        expected_tasks = [SimpleNamespace(id=uuid.uuid4())]
+        result = Mock()
+        result.scalars.return_value.all.return_value = expected_tasks
+        db = SimpleNamespace(execute=AsyncMock(return_value=result))
+        user_id = uuid.uuid4()
+
+        tasks = await get_undated_tasks(db, user_id)
+
+        self.assertEqual(tasks, expected_tasks)
+        statement = str(db.execute.await_args.args[0])
+        self.assertIn("tasks.user_id = :user_id_1", statement)
+        self.assertIn("tasks.is_deleted IS false", statement)
+        self.assertIn("tasks.status = :status_1", statement)
+        self.assertIn("tasks.due_date IS NULL", statement)
+
     async def test_event_is_pending_for_callers_commit(self):
         session = FakeSession()
         user_id = uuid.uuid4()
@@ -222,4 +238,3 @@ class TaskEventServiceTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

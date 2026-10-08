@@ -10,7 +10,7 @@ DATE_TIME_SIGNALS = [
     r"\btomorrow\b", r"\btoday\b", r"\btonight\b", r"\bnext week\b",
     r"\bmonday\b", r"\btuesday\b", r"\bwednesday\b", r"\bthursday\b",
     r"\bfriday\b", r"\bsaturday\b", r"\bsunday\b",
-    r"\b\d{1,2}(:\d{2})?\s*(am|pm)\b", r"\bat \d{1,2}\b",
+    r"\b\d{1,2}(:\d{2})?\s*(am|pm)\b", r"\b(?:at|by)\s+\d{1,2}\b",
 ]
 
 

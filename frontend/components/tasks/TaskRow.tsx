@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Task } from '../../types/task';
 import { useColors } from '../../theme/colors';
+import { isTaskOverdue } from '../../utils/taskDates';
 
 interface TaskRowProps {
   task: Task;
@@ -17,8 +18,7 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
     high: colors.danger,
   };
   const isDone = task.status === 'completed';
-  const isOverdue =
-    task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date();
+  const isOverdue = isTaskOverdue(task.due_date, task.status);
 
   return (
     <TouchableOpacity

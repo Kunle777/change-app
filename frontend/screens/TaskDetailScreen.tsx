@@ -5,6 +5,7 @@ import RescheduleSheet from '../components/tasks/RescheduleSheet';
 import { getTaskById, breakdownTask, stopTaskSeries, editTaskSeries, type SeriesEditScope } from '../services/tasks';
 import { completeTask, notNowTask, rescheduleTask } from '../services/tasks';
 import { useColors } from '../theme/colors';
+import { isTaskOverdue } from '../utils/taskDates';
 
 type BreakdownStep = { title: string };
 
@@ -105,8 +106,7 @@ export default function TaskDetailScreen({ route, navigation }: any) {
     );
   }
 
-  const isOverdue =
-    task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date();
+  const isOverdue = isTaskOverdue(task.due_date, task.status);
 
   return (
     <>

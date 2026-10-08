@@ -13,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { toggleCheckins } from '../services/settings';
 import { getTodayCheckinStatus } from '../services/checkins';
+import { scheduleTestNotification } from '../services/notifications';
 
 const STORAGE_KEYS = {
   NOTIFICATIONS_ENABLED: 'settings_notifications_enabled',
@@ -25,6 +26,7 @@ export default function SettingsScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [defaultPriority, setDefaultPriority] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [testingNotifications, setTestingNotifications] = useState(false);
 
   useEffect(() => {
     // Load check-in status from API
@@ -71,6 +73,26 @@ export default function SettingsScreen() {
     await AsyncStorage.setItem(STORAGE_KEYS.DEFAULT_PRIORITY, JSON.stringify(value));
   };
 
+  const handleTestNotification = async () => {
+    setTestingNotifications(true);
+    try {
+      const result = await scheduleTestNotification();
+      Alert.alert(
+        'Test notification scheduled',
+        `Permission: ${result.permissionStatus}. Android channel importance: ${
+          result.channelImportance ?? 'not available'
+        }. Lock your phone and wait about 8 seconds.`,
+      );
+    } catch (error) {
+      Alert.alert(
+        'Notification test failed',
+        error instanceof Error ? error.message : 'Android could not schedule the test notification.',
+      );
+    } finally {
+      setTestingNotifications(false);
+    }
+  };
+
   if (checkinsEnabled === null) {
     return (
       <View style={styles.centered}>
@@ -115,6 +137,20 @@ export default function SettingsScreen() {
           trackColor={{ false: '#d1d5db', true: '#4F46E5' }}
         />
       </View>
+
+      <TouchableOpacity
+        style={styles.row}
+        onPress={handleTestNotification}
+        disabled={testingNotifications}
+      >
+        <View style={styles.textContainer}>
+          <Text style={styles.label}>Send test notification</Text>
+          <Text style={styles.sublabel}>
+            Schedule a local alert for 8 seconds from now
+          </Text>
+        </View>
+        {testingNotifications && <ActivityIndicator size="small" color="#4F46E5" />}
+      </TouchableOpacity>
 
       <View style={styles.row}>
         <View style={styles.textContainer}>

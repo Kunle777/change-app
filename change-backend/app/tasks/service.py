@@ -21,6 +21,12 @@ from app.tasks.task_event_service import log_task_event
 from app.tasks.recurrence_service import stop_task_series
 
 
+def _local_day_start_utc(timezone_name: str | None, target_date: date | None = None) -> datetime:
+    zone = ZoneInfo(timezone_name or "Africa/Lagos")
+    local_date = target_date or datetime.now(zone).date()
+    return datetime.combine(local_date, time.min, tzinfo=zone).astimezone(timezone.utc)
+
+
 async def edit_task_series(
     db: AsyncSession,
     task_id: uuid.UUID,
@@ -147,6 +153,20 @@ async def get_tasks_for_user(db: AsyncSession, user_id: uuid.UUID):
                 Task.completed_at >= cutoff,
             )
         )
+    )
+    return result.scalars().all()
+
+
+async def get_undated_tasks(db: AsyncSession, user_id: uuid.UUID):
+    result = await db.execute(
+        select(Task)
+        .where(
+            Task.user_id == user_id,
+            Task.is_deleted.is_(False),
+            Task.status == StatusEnum.pending,
+            Task.due_date.is_(None),
+        )
+        .order_by(Task.created_at.desc())
     )
     return result.scalars().all()
 
@@ -307,14 +327,19 @@ async def snooze_task(
     return db_task
 
 
-async def get_overdue_tasks(db: AsyncSession, user_id: uuid.UUID):
-    current_time = datetime.now(timezone.utc)
+async def get_overdue_tasks(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    timezone_name: str | None = None,
+):
+    start_of_today = _local_day_start_utc(timezone_name)
     result = await db.execute(
         select(Task).where(
             and_(
                 Task.user_id == user_id,
-                Task.due_date < current_time,
-                Task.status != StatusEnum.completed
+                Task.due_date < start_of_today,
+                Task.status.in_([StatusEnum.pending, StatusEnum.in_progress]),
+                Task.is_deleted.is_(False),
             )
         )
     )
@@ -429,7 +454,6 @@ async def mark_task_completed(db: AsyncSession, task_id: uuid.UUID, user_id: uui
             event_type=TaskEventType.COMPLETED,
         )
     await db.commit()
-    await db.refresh(task)
     return task
 
 async def reschedule_task(db: AsyncSession, task_id, user_id, due_date, reminder_time) -> Task | None:
@@ -516,15 +540,23 @@ async def get_task_dates_for_month(db: AsyncSession, user_id, year: int, month: 
 
 
 async def get_tasks_for_date(
-    db: AsyncSession, user_id, target_date: date, status_filter: str = "all"
+    db: AsyncSession,
+    user_id,
+    target_date: date,
+    status_filter: str = "all",
+    timezone_name: str | None = None,
 ) -> list[Task]:
-    start = datetime.combine(target_date, time.min, tzinfo=timezone.utc)
-    end = datetime.combine(target_date, time.max, tzinfo=timezone.utc)
+    zone = ZoneInfo(timezone_name or "Africa/Lagos")
+    local_today = datetime.now(zone).date()
+    if status_filter == "overdue" and target_date >= local_today:
+        return []
+    start = _local_day_start_utc(timezone_name, target_date)
+    end = _local_day_start_utc(timezone_name, target_date + timedelta(days=1))
     query = select(Task).where(
         Task.user_id == user_id,
         Task.is_deleted.is_(False),
         Task.due_date >= start,
-        Task.due_date <= end,
+        Task.due_date < end,
     )
     if status_filter == "incomplete":
         query = query.where(Task.status == StatusEnum.pending)
@@ -533,7 +565,7 @@ async def get_tasks_for_date(
     elif status_filter == "overdue":
         query = query.where(
             Task.status == StatusEnum.pending,
-            Task.due_date < datetime.now(timezone.utc),
+            Task.due_date < _local_day_start_utc(timezone_name),
         )
     query = query.order_by(Task.status, Task.reminder_time)
     result = await db.execute(query)

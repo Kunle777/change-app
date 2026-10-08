@@ -2,8 +2,8 @@ import asyncio
 import json
 import re
 import uuid
-from datetime import datetime
-import uuid
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -120,6 +120,7 @@ async def convert_to_task(
     dump_id: uuid.UUID,
     user_id: uuid.UUID,
     suggestions: list[dict],
+    timezone_name: str = "Africa/Lagos",
 ):
     # Serialize conversions of the same dump so a retry or double tap cannot
     # create duplicate tasks. The row lock is held through the single commit.
@@ -150,11 +151,28 @@ async def convert_to_task(
         raw_rule = suggestion.get("recurrence_rule")
         series = None
         due_date = None
+        reminder_time = None
         recurrence = None
+        suggested_date = suggestion.get("due_date")
+        suggested_time = suggestion.get("time")
+        zone = ZoneInfo(timezone_name)
+        if suggested_date is not None:
+            if isinstance(suggested_date, str):
+                suggested_date = date.fromisoformat(suggested_date)
+            due_date = datetime.combine(
+                suggested_date,
+                time.max,
+                tzinfo=zone,
+            ).astimezone(timezone.utc)
+            if suggested_time is not None:
+                if isinstance(suggested_time, str):
+                    suggested_time = time.fromisoformat(suggested_time)
+                reminder_time = datetime.combine(
+                    suggested_date,
+                    suggested_time,
+                    tzinfo=zone,
+                ).astimezone(timezone.utc)
         if isinstance(raw_rule, dict):
-            from zoneinfo import ZoneInfo
-            from datetime import time, timezone
-
             from app.tasks.schemas import TaskRecurrenceCreate
 
             try:
@@ -200,7 +218,7 @@ async def convert_to_task(
             status=task_data.status,
             description=task_data.description,
             due_date=due_date or task_data.due_date,
-            reminder_time=task_data.reminder_time,
+            reminder_time=reminder_time or task_data.reminder_time,
             recurrence=recurrence or (task_data.recurrence.name if task_data.recurrence else None),
             series_id=series.id if series else None,
             occurrence_date=series.start_date if series else None,

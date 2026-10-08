@@ -14,7 +14,6 @@ from app.database import get_db
 from app.braindump.routers import router as braindump_router
 from app.checkins.routers import router as checkins_router
 from app.tasks.routers import router as tasks_router
-from app.users.models import User
 from app.users.routers import router as users_router
 from app.users.security import limiter
 from app.ai.routers import router as ai_router
@@ -70,6 +69,5 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/health/db")
 async def health_db(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User))
-    users = result.scalars().all()
-    return users
+    await db.execute(select(1))
+    return {"database": "ok"}

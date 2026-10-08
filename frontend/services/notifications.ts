@@ -61,6 +61,51 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   return true;
 }
 
+export async function scheduleTestNotification(): Promise<{
+  notificationId: string;
+  permissionStatus: string;
+  channelImportance: number | null;
+}> {
+  if (isExpoGo || Platform.OS !== 'android' || !Device.isDevice) {
+    throw new Error('The notification test requires the installed Android app on a phone.');
+  }
+
+  const permissionGranted = await requestNotificationPermissions();
+  const permissions = await Notifications.getPermissionsAsync();
+  if (!permissionGranted) {
+    throw new Error(`Android notification permission is ${permissions.status}.`);
+  }
+
+  const channel = await Notifications.getNotificationChannelAsync('default');
+  if (channel?.importance === Notifications.AndroidImportance.NONE) {
+    throw new Error('Android has disabled the app notification channel. Enable it in system settings.');
+  }
+
+  const notificationId = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Elvyn notification test',
+      body: 'Local notifications are working on this device.',
+      sound: true,
+      data: { type: 'notification_test' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: new Date(Date.now() + 8000),
+    },
+  });
+
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  if (!scheduled.some((notification) => notification.identifier === notificationId)) {
+    throw new Error('Android did not keep the test notification in its scheduled list.');
+  }
+
+  return {
+    notificationId,
+    permissionStatus: permissions.status,
+    channelImportance: channel?.importance ?? null,
+  };
+}
+
 export async function scheduleTaskReminder(
   taskId: string,
   title: string,

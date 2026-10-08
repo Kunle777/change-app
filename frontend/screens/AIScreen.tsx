@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Modal,
   Pressable,
 } from 'react-native';
-import { KeyboardAvoidingView as RNKCKeyboardAvoidingView } from 'react-native-keyboard-controller';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   sendChatMessage,
@@ -24,6 +24,8 @@ import {
   rejectChatAction,
 } from '../services/ai';
 import type { ChatConversation, PendingChatAction } from '../services/ai';
+import { supabase } from '../services/supabase';
+import { useColors, type ThemeColors } from '../theme/colors';
 
 type Message = {
   id: string;
@@ -35,7 +37,47 @@ type Message = {
   pendingActionStatus?: string;
 };
 
+const NEW_CONVERSATION = 'new';
+
+function getActiveConversationKey(userId: string) {
+  return `elvyn_ai_active_conversation:${userId}`;
+}
+
+function mapConversationMessages(
+  detail: Awaited<ReturnType<typeof getChatConversation>>,
+  pendingActions: PendingChatAction[],
+): Message[] {
+  const pendingById = new Map<string, PendingChatAction>(
+    pendingActions.map((action) => [action.id, action]),
+  );
+  return detail.messages.flatMap((turn) => [
+    {
+      id: `${turn.id}-user`,
+      role: 'user' as const,
+      text: turn.question,
+      timestamp: new Date(turn.created_at).toLocaleTimeString(),
+    },
+    {
+      id: `${turn.id}-ai`,
+      role: 'ai' as const,
+      text: turn.response,
+      timestamp: new Date(turn.created_at).toLocaleTimeString(),
+      pendingActionId: turn.pending_action_id ?? undefined,
+      pendingActionSummary: turn.pending_action_id
+        ? pendingById.get(turn.pending_action_id)?.summary
+        : undefined,
+      pendingActionStatus: turn.pending_action_id
+        ? pendingById.has(turn.pending_action_id)
+          ? 'pending'
+          : 'resolved'
+        : undefined,
+    },
+  ]);
+}
+
 export default function AIScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -43,7 +85,55 @@ export default function AIScreen() {
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [restoringConversation, setRestoringConversation] = useState(true);
   const flatListRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const restoreConversation = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (!data.user) return;
+
+        const storageKey = getActiveConversationKey(data.user.id);
+        const storedId = await AsyncStorage.getItem(storageKey);
+        if (storedId === NEW_CONVERSATION) return;
+
+        const availableConversations = await getChatConversations();
+        if (!active) return;
+        setConversations(availableConversations);
+
+        const targetId = storedId ?? availableConversations[0]?.id;
+        if (!targetId) return;
+
+        const detail = await getChatConversation(targetId);
+        const pendingActions = await getPendingChatActions(targetId);
+        if (!active) return;
+
+        setConversationId(detail.id);
+        setMessages(mapConversationMessages(detail, pendingActions));
+        if (storedId === null) {
+          await AsyncStorage.setItem(storageKey, detail.id);
+        }
+      } catch (error) {
+        if (active) {
+          setHistoryError(
+            error instanceof Error ? error.message : 'Could not restore your conversation.',
+          );
+        }
+      } finally {
+        if (active) setRestoringConversation(false);
+      }
+    };
+
+    void restoreConversation();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -71,10 +161,13 @@ export default function AIScreen() {
   const openHistory = async () => {
     setHistoryVisible(true);
     setLoadingHistory(true);
+    setHistoryError(null);
     try {
       setConversations(await getChatConversations());
-    } catch (err: any) {
-      addMessage('ai', `⚠️ ${err.message}`);
+    } catch (error) {
+      setHistoryError(
+        error instanceof Error ? error.message : 'Could not load conversation history.',
+      );
     } finally {
       setLoadingHistory(false);
     }
@@ -82,43 +175,44 @@ export default function AIScreen() {
 
   const selectConversation = async (id: string) => {
     setLoadingHistory(true);
+    setHistoryError(null);
     try {
       const detail = await getChatConversation(id);
       const pendingActions = await getPendingChatActions(id);
-      const pendingById = new Map<string, PendingChatAction>(
-        pendingActions.map((action) => [action.id, action]),
-      );
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      if (!data.user) throw new Error('Please log in again to open this conversation.');
+      await AsyncStorage.setItem(getActiveConversationKey(data.user.id), detail.id);
       setConversationId(detail.id);
-      setMessages(
-        detail.messages.flatMap((turn) => [
-          {
-            id: `${turn.id}-user`,
-            role: 'user' as const,
-            text: turn.question,
-            timestamp: new Date(turn.created_at).toLocaleTimeString(),
-          },
-          {
-            id: `${turn.id}-ai`,
-            role: 'ai' as const,
-            text: turn.response,
-            timestamp: new Date(turn.created_at).toLocaleTimeString(),
-            pendingActionId: turn.pending_action_id ?? undefined,
-            pendingActionSummary: turn.pending_action_id
-              ? pendingById.get(turn.pending_action_id)?.summary
-              : undefined,
-            pendingActionStatus: turn.pending_action_id
-              ? pendingById.has(turn.pending_action_id)
-                ? 'pending'
-                : 'resolved'
-              : undefined,
-          },
-        ]),
-      );
+      setMessages(mapConversationMessages(detail, pendingActions));
       setHistoryVisible(false);
-    } catch (err: any) {
-      addMessage('ai', `⚠️ ${err.message}`);
+    } catch (error) {
+      setHistoryError(
+        error instanceof Error ? error.message : 'Could not load this conversation.',
+      );
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const startNewConversation = async () => {
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      if (!data.user) throw new Error('Please log in again to start a conversation.');
+      await AsyncStorage.setItem(
+        getActiveConversationKey(data.user.id),
+        NEW_CONVERSATION,
+      );
+      setConversationId(null);
+      setMessages([]);
+      setInput('');
+      setHistoryVisible(false);
+      setHistoryError(null);
+    } catch (error) {
+      setHistoryError(
+        error instanceof Error ? error.message : 'Could not start a new conversation.',
+      );
     }
   };
 
@@ -131,13 +225,29 @@ export default function AIScreen() {
     try {
       const result = await sendChatMessage(userText, conversationId);
       setConversationId(result.conversation_id ?? conversationId);
-      addMessage(
-        'ai',
-        result.message,
-        result.pending_action_id
-          ? { id: result.pending_action_id, summary: result.pending_action_summary }
-          : undefined,
-      );
+      if (result.conversation_id) {
+        addMessage(
+          'ai',
+          result.message,
+          result.pending_action_id
+            ? { id: result.pending_action_id, summary: result.pending_action_summary }
+            : undefined,
+        );
+        try {
+          const { data, error } = await supabase.auth.getUser();
+          if (error) throw error;
+          if (data.user) {
+            await AsyncStorage.setItem(
+              getActiveConversationKey(data.user.id),
+              result.conversation_id,
+            );
+          }
+        } catch (storageError) {
+          console.warn('Could not remember the active AI conversation', storageError);
+        }
+      } else {
+        addMessage('ai', result.message);
+      }
     } catch (err: any) {
       addMessage('ai', `⚠️ ${err.message}`);
     } finally {
@@ -193,17 +303,29 @@ export default function AIScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <RNKCKeyboardAvoidingView
+      <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}
+        keyboardVerticalOffset={0}
       >
         <View style={styles.conversationActions}>
-          <TouchableOpacity onPress={openHistory} disabled={sending}>
+          <TouchableOpacity onPress={openHistory} disabled={sending || restoringConversation}>
             <Text style={styles.conversationActionText}>History</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => void startNewConversation()} disabled={sending}>
+            <Text style={styles.conversationActionText}>New chat</Text>
+          </TouchableOpacity>
         </View>
-        {messages.length === 0 && (
+        {restoringConversation && (
+          <View style={styles.emptyContainer}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={styles.emptyText}>Restoring your conversation...</Text>
+          </View>
+        )}
+        {!restoringConversation && historyError && !historyVisible && (
+          <Text style={styles.historyError}>{historyError}</Text>
+        )}
+        {!restoringConversation && messages.length === 0 && (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
               Ask anything — your tasks, goals, or just how you're doing.
@@ -215,6 +337,8 @@ export default function AIScreen() {
           data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           renderItem={({ item }) => {
             const isUser = item.role === 'user';
@@ -262,7 +386,7 @@ export default function AIScreen() {
 
         {sending && (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color="#4A90E2" />
+            <ActivityIndicator size="small" color={colors.primary} />
             <Text style={styles.loadingText}>Ai is thinking...</Text>
           </View>
         )}
@@ -282,14 +406,18 @@ export default function AIScreen() {
             value={input}
             onChangeText={setInput}
             placeholder="Ask something..."
-            placeholderTextColor="#888"
+            placeholderTextColor={colors.textMuted}
             multiline
             maxLength={1000}
+            editable={!sending && !restoringConversation}
           />
           <TouchableOpacity
-            style={[styles.sendButton, (!input.trim() || sending) && styles.disabledSendButton]}
+            style={[
+              styles.sendButton,
+              (!input.trim() || sending || restoringConversation) && styles.disabledSendButton,
+            ]}
             onPress={handleSend}
-            disabled={sending}
+            disabled={!input.trim() || sending || restoringConversation}
           >
             <Text style={styles.sendText}>Send</Text>
           </TouchableOpacity>
@@ -309,7 +437,9 @@ export default function AIScreen() {
                 </Pressable>
               </View>
               {loadingHistory ? (
-                <ActivityIndicator />
+                <ActivityIndicator color={colors.primary} />
+              ) : historyError ? (
+                <Text style={styles.historyError}>{historyError}</Text>
               ) : conversations.length === 0 ? (
                 <Text style={styles.emptyText}>No saved conversations yet.</Text>
               ) : (
@@ -329,94 +459,133 @@ export default function AIScreen() {
             </View>
           </View>
         </Modal>
-      </RNKCKeyboardAvoidingView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  conversationActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: '#eee',
-  },
-  conversationActionText: { color: '#4A90E2', fontWeight: '600' },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  historyPanel: {
-    height: '70%',
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 18,
-  },
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  historyTitle: { fontSize: 18, fontWeight: '700', color: '#222' },
-  historyItem: { paddingVertical: 14, borderBottomWidth: 1, borderColor: '#eee' },
-  historyItemTitle: { color: '#222', fontWeight: '600' },
-  historyItemDate: { color: '#888', fontSize: 12, marginTop: 5 },
-  pendingActionBox: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderColor: '#ccc' },
-  pendingActionSummary: { color: '#222', fontWeight: '600' },
-  pendingActionButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  confirmActionText: { color: '#14804a', fontWeight: '700' },
-  rejectActionText: { color: '#b42318', fontWeight: '700' },
-  pendingActionStatus: { color: '#666', fontSize: 12, marginTop: 8, textTransform: 'capitalize' },
-  list: { padding: 16, flexGrow: 1 },
-  empty: { color: '#aaa', textAlign: 'center', marginTop: 40, fontSize: 14 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
-  emptyText: { color: '#aaa', textAlign: 'center', fontSize: 14 },
-  bubbleContainer: { borderRadius: 12, padding: 10, marginBottom: 8, maxWidth: '80%' },
-  userAlign: { backgroundColor: '#333', alignSelf: 'flex-end' },
-  aiAlign: { backgroundColor: '#eee', alignSelf: 'flex-start' },
-  userText: { color: '#fff' },
-  aiText: { color: '#222' },
-  userTimestamp: { color: '#ccc' },
-  aiTimestamp: { color: '#888' },
-  summaryButton: { padding: 10, alignItems: 'center', borderTopWidth: 1, borderColor: '#eee' },
-  disabledSummaryButton: { backgroundColor: '#ccc' },
-  summaryButtonText: { color: '#555', fontSize: 13 },
-  inputRow: {
-    flexDirection: 'row',
-    padding: 12,
-    borderTopWidth: 1,
-    borderColor: '#eee',
-    backgroundColor: '#fff',
-  },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-  },
-  sendButton: { justifyContent: 'center' },
-  disabledSendButton: { backgroundColor: '#ccc' },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  loadingText: { color: '#333', marginLeft: 8 },
-  container: { flex: 1, backgroundColor: '#fff' },
-  bubble: { borderRadius: 12, padding: 10, maxWidth: '80%' },
-  sendText: { color: '#333', fontWeight: '600' },
-  userBubble: { backgroundColor: '#333' },
-  aiBubble: { backgroundColor: '#eee' },
-  timestamp: { fontSize: 12, color: '#888', marginTop: 4 },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    conversationActions: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    conversationActionText: { color: colors.primary, fontWeight: '700' },
+    modalBackdrop: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: 'rgba(0,0,0,0.45)',
+    },
+    historyPanel: {
+      height: '70%',
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 18,
+      borderTopRightRadius: 18,
+      padding: 18,
+    },
+    historyHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    historyTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+    historyItem: { paddingVertical: 14, borderBottomWidth: 1, borderColor: colors.border },
+    historyItemTitle: { color: colors.text, fontWeight: '600' },
+    historyItemDate: { color: colors.textMuted, fontSize: 12, marginTop: 5 },
+    historyError: {
+      color: colors.danger,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    pendingActionBox: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderColor: colors.border },
+    pendingActionSummary: { color: colors.text, fontWeight: '600' },
+    pendingActionButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+    confirmActionText: { color: colors.success, fontWeight: '700' },
+    rejectActionText: { color: colors.danger, fontWeight: '700' },
+    pendingActionStatus: {
+      color: colors.textMuted,
+      fontSize: 12,
+      marginTop: 8,
+      textTransform: 'capitalize',
+    },
+    list: { padding: 16, flexGrow: 1 },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
+    emptyText: { color: colors.textMuted, textAlign: 'center', fontSize: 14, marginTop: 8 },
+    bubbleContainer: { borderRadius: 16, padding: 12, marginBottom: 10, maxWidth: '88%' },
+    userAlign: { backgroundColor: colors.primary, alignSelf: 'flex-end' },
+    aiAlign: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignSelf: 'flex-start',
+    },
+    userText: { color: '#FFFFFF', fontSize: 15, lineHeight: 21 },
+    aiText: { color: colors.text, fontSize: 15, lineHeight: 21 },
+    userTimestamp: { color: '#E0DEFF' },
+    aiTimestamp: { color: colors.textMuted },
+    summaryButton: {
+      padding: 12,
+      alignItems: 'center',
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    disabledSummaryButton: { opacity: 0.55 },
+    summaryButtonText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
+    inputRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      padding: 12,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    input: {
+      flex: 1,
+      minHeight: 44,
+      maxHeight: 120,
+      color: colors.text,
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginRight: 8,
+      fontSize: 16,
+      textAlignVertical: 'top',
+    },
+    sendButton: {
+      minHeight: 44,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      borderRadius: 22,
+      backgroundColor: colors.primary,
+    },
+    disabledSendButton: { backgroundColor: colors.border },
+    loadingContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 10,
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      marginHorizontal: 16,
+      marginBottom: 8,
+    },
+    loadingText: { color: colors.text, marginLeft: 8 },
+    container: { flex: 1, backgroundColor: colors.background },
+    bubble: { borderRadius: 12, maxWidth: '100%' },
+    sendText: { color: '#FFFFFF', fontWeight: '700' },
+    userBubble: { backgroundColor: colors.primary },
+    aiBubble: { backgroundColor: colors.surface },
+    timestamp: { fontSize: 11, marginTop: 5 },
+  });
+}

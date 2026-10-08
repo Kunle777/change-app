@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { breakdownTask } from '../services/tasks';
+import { isTaskOverdue } from '../utils/taskDates';
 
 type Task = {
   id: string;
@@ -26,8 +27,7 @@ export default function TaskCard({ task, onDone, onSnooze }: TaskCardProps) {
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
   const [steps, setSteps] = useState<string[] | null>(null);
 
-  const isOverdue =
-    task.due_date && new Date(task.due_date) < new Date() && task.status !== '3' && task.status !== 'completed';
+  const isOverdue = isTaskOverdue(task.due_date, task.status);
   const priorityLabel = PRIORITY_LABEL[String(task.priority)] ?? String(task.priority);
 
   async function handleDone() {

@@ -64,6 +64,15 @@ async def get_upcoming_tasks_route(
 ):
     return await service.get_upcoming_tasks(db, current_user.id, days)
 
+
+@router.get("/undated", response_model=list[TaskResponse])
+async def get_undated_tasks_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await service.get_undated_tasks(db, current_user.id)
+
+
 @router.post("", response_model=TaskResponse)
 async def create_task_route(
     data: TaskCreate,
@@ -72,13 +81,16 @@ async def create_task_route(
 ):
     
     return await service.create_task(db,data, current_user.id)
-@router.get("/overdue", response_model=TaskResponse)
+@router.get("/overdue", response_model=list[TaskResponse])
 async def get_overdue_tasks_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    overdue_tasks = await service.get_overdue_tasks(db, current_user.id)
-    return overdue_tasks
+    return await service.get_overdue_tasks(
+        db,
+        current_user.id,
+        current_user.last_active_timezone,
+    )
 @router.get("", response_model=list[TaskResponse])
 async def get_tasks_route(
     db:AsyncSession = Depends(get_db),
@@ -105,7 +117,13 @@ async def tasks_by_date(
     db: AsyncSession = Depends(get_db),
 ):
     target = datetime.strptime(date, "%Y-%m-%d").date()
-    return await service.get_tasks_for_date(db, current_user.id, target, status)
+    return await service.get_tasks_for_date(
+        db,
+        current_user.id,
+        target,
+        status,
+        current_user.last_active_timezone,
+    )
 
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_task_route(
