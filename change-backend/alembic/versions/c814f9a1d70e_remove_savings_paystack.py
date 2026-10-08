@@ -32,7 +32,7 @@ def upgrade() -> None:
         "payout_account_number", "payout_account_name", "kyc_verified_name",
         "kyc_status",
     ):
-        op.drop_column("users", column)
+        op.drop_column("users", column, if_exists=True)
 
     for enum_name in (
         "pending_deposit_status", "transaction_type", "transaction_status",

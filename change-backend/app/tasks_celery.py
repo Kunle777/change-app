@@ -19,6 +19,24 @@ from sqlalchemy import select, and_
 from fcm import send_push_notification
 
 
+def _send_remote_reminder(task: Task) -> bool:
+    if not task.user or not task.user.fcm_token:
+        print(f"No FCM token for task {task.id}, user={task.user_id}")
+        return False
+    try:
+        sent = send_push_notification(
+            task.user.fcm_token,
+            title="Task Reminder",
+            body=task.title,
+        )
+    except Exception as error:
+        print(f"FCM send failed for task {task.id}: {error}")
+        return False
+    if sent:
+        task.is_reminder_sent = True
+    return sent
+
+
 async def _check_reminders_async():
     async with AsyncSessionLocal() as db:
         due_tasks = await get_due_reminders(db)
@@ -53,18 +71,8 @@ async def _check_reminders_async():
             if local_scheduled:
                 # Expo owns this reminder on-device; skip FCM to avoid duplicate alerts.
                 task.is_reminder_sent = True
-            elif task.user and task.user.fcm_token:
-                try:
-                    send_push_notification(
-                        task.user.fcm_token,
-                        title="Task Reminder",
-                        body=task.title,
-                    )
-                    task.is_reminder_sent = True
-                except Exception as e:
-                    print(f"FCM send failed for task {task.id}: {e}")
             else:
-                print(f"No FCM token for task {task.id}, user={task.user_id}")
+                _send_remote_reminder(task)
         await db.commit()
 
 
@@ -144,4 +152,3 @@ def spawn_recurring_task_job():
 def say_hello(name: str):
     print(f"Sending hello to {name}")
     return f"Hello, {name}!"
-

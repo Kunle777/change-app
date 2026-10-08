@@ -39,8 +39,11 @@ export default function LoginScreen({ navigation }: Props) {
       if (session) {
         navigation.replace('MainTabs');
       }
-    } catch (err: any) {
-      Alert.alert('Sign-in failed', err.message ?? 'Please try again.');
+    } catch (err: unknown) {
+      Alert.alert(
+        'Sign-in failed',
+        err instanceof Error ? err.message : 'Please try again.',
+      );
     } finally {
       setGoogleLoading(false);
     }
@@ -76,7 +79,9 @@ export default function LoginScreen({ navigation }: Props) {
         <Text style={{ marginTop: 12, textAlign: 'center', color: '#555' }}>Forgot password?</Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={handleGoogleSignIn} disabled={googleLoading}>
-        <Text>{googleLoading ? 'Connecting…' : 'Continue with Google'}</Text>
+        <Text style={{ marginTop: 16, textAlign: 'center' }}>
+          {googleLoading ? 'Connecting...' : 'Continue with Google'}
+        </Text>
       </TouchableOpacity>
     </View>
   );

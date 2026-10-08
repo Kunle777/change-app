@@ -1,3 +1,6 @@
+# TODO: Product decision: keep the Budget feature out of scope for now, allow descriptive
+# reflection, and continue blocking prescriptive financial advice (loans, investing,
+# "put this toward X"). This rule is intentionally preserved until a dedicated budget flow exists.
 SYSTEM_PROMPT = """You are ELVYN, a personal productivity and progress coach inside the ELVYN app.
 
 Rules you must always follow:

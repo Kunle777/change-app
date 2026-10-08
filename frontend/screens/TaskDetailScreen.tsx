@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { Task } from '../types/task';
+import RescheduleSheet from '../components/tasks/RescheduleSheet';
 import { getTaskById, breakdownTask, stopTaskSeries, editTaskSeries, type SeriesEditScope } from '../services/tasks';
 import { completeTask, notNowTask, rescheduleTask } from '../services/tasks';
 import { useColors } from '../theme/colors';
@@ -17,6 +18,7 @@ export default function TaskDetailScreen({ route, navigation }: any) {
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [steps, setSteps] = useState<BreakdownStep[] | null>(null);
   const [showNotNowOptions, setShowNotNowOptions] = useState(false);
+  const [rescheduleVisible, setRescheduleVisible] = useState(false);
   const [editingSeries, setEditingSeries] = useState(false);
   const [seriesTitle, setSeriesTitle] = useState('');
   const [seriesEditLoading, setSeriesEditLoading] = useState(false);
@@ -67,11 +69,20 @@ export default function TaskDetailScreen({ route, navigation }: any) {
     }
   }
 
-  async function handleReschedule() {
-    // Wire to your existing date/time picker component here —
-    // once the user picks a date, call:
-    // await rescheduleTask(taskId, newDueDate, newReminderTime)
-    navigation.navigate('RescheduleTask', { taskId });
+  function handleReschedule() {
+    setRescheduleVisible(true);
+  }
+
+  async function handleSaveReschedule(dueDate: Date, reminderTime?: Date) {
+    setActionLoading('reschedule');
+    try {
+      const updated = await rescheduleTask(taskId, dueDate, reminderTime);
+      setTask(updated);
+    } catch {
+      Alert.alert("Couldn't reschedule this task.", 'Please try again.');
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function handleBreakdown() {
@@ -98,6 +109,7 @@ export default function TaskDetailScreen({ route, navigation }: any) {
     task.status === 'pending' && task.due_date && new Date(task.due_date) < new Date();
 
   return (
+    <>
     <ScrollView style={{ flex: 1, padding: 20, backgroundColor: colors.background }}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text>← Back</Text>
@@ -201,8 +213,8 @@ export default function TaskDetailScreen({ route, navigation }: any) {
           </View>
         )}
 
-        <TouchableOpacity onPress={handleReschedule}>
-          <Text>📅 Reschedule</Text>
+        <TouchableOpacity onPress={handleReschedule} disabled={actionLoading === 'reschedule'}>
+          <Text>{actionLoading === 'reschedule' ? 'Rescheduling…' : '📅 Reschedule'}</Text>
         </TouchableOpacity>
         {task.series_id && (
           <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 }}>
@@ -282,5 +294,12 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         )}
       </View>
     </ScrollView>
+    <RescheduleSheet
+      visible={rescheduleVisible}
+      task={task}
+      onClose={() => setRescheduleVisible(false)}
+      onSave={handleSaveReschedule}
+    />
+    </>
   );
 }

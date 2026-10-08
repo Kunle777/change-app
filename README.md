@@ -2,7 +2,7 @@
 
 # Elvyn
 
-*A Personal Productivity, Savings & AI Coaching Companion App*
+*A Personal Productivity & AI Coaching Companion App*
 
 **Prepared by AbdulRazaq**
 IT Operator, DataGuard NG · Founder, KunleTech
