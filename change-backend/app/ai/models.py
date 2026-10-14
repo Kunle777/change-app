@@ -82,5 +82,6 @@ class AIInteraction(Base):
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     was_helpful: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    context_richness: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String, server_default="success", default="success")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))

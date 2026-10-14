@@ -135,17 +135,19 @@ export async function scheduleTaskReminder(
       title: 'Task Reminder',
       body: title,
       sound: true,
-  data: {
-    type: TASK_REMINDER_TYPE,
-    taskId,
-    reminderTime: reminderDate.toISOString(),
-    priorityReminder,
-  },
-      ...(Platform.OS === 'android' && priorityReminder && { channelId: 'priority-reminders' }),
+      data: {
+        type: TASK_REMINDER_TYPE,
+        taskId,
+        reminderTime: reminderDate.toISOString(),
+        priorityReminder,
+      },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: reminderDate,
+      ...(Platform.OS === 'android' && {
+        channelId: priorityReminder ? 'priority-reminders' : 'default',
+      }),
     },
   });
 

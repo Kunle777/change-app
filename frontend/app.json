@@ -14,6 +14,10 @@
     "android": {
       "package": "com.kunletech.change",
       "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "READ_CALENDAR",
+        "WRITE_CALENDAR"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

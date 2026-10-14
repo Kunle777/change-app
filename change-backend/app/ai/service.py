@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.checkins import service as checkin_service
 from app.ai.models import AIUsageLog
 from app.ai import gemini
+from app.ai.freshness_service import compute_data_freshness
 from app.ai.prompt_builder import build_prompt, build_system_prompt
 from app.ai.context_builder import build_context
 from app.ai.schemas import ChatResponse, ConversationDetail, ConversationSummary, ConversationTurn
@@ -371,7 +372,8 @@ async def handle_chat(
     except Exception:
         user_zone = ZoneInfo("Africa/Lagos")
     local_date = datetime.now(user_zone).date().isoformat()
-    system_prompt = build_system_prompt(intent, context, local_date)
+    freshness = await compute_data_freshness(db, user_id, timezone_name)
+    system_prompt = build_system_prompt(intent, context, local_date, freshness.to_prompt_line())
     generated = gemini.generate_chat_response_with_tools(system_prompt, history, message)
 
     pending_action_id = None
@@ -424,6 +426,7 @@ async def handle_chat(
             response=final_message,
             context_used=context,
             context_size=len(context),
+            context_richness=freshness.tier.value,
             status="success",
         )
     )

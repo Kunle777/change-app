@@ -22,12 +22,21 @@ Respond naturally with a concise message. Do not output JSON unless explicitly a
 """
 
 
-def build_system_prompt(intent: str, context: str, local_date: str) -> str:
+def build_system_prompt(
+    intent: str, context: str, local_date: str, freshness_note: str = ""
+) -> str:
+    freshness_section = (
+        f"\n\n{freshness_note} "
+        "If recent activity is sparse or absent in an area, say so honestly "
+        "rather than assuming or inventing what might have happened."
+        if freshness_note
+        else ""
+    )
     return f"""{SYSTEM_PROMPT}
 
 Detected intent: {intent}
 The user's local date is {local_date}. Resolve relative dates such as "tomorrow" from this date.
-
+{freshness_section}
 Relevant ELVYN data:
 {context}
 """

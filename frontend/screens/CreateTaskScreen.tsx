@@ -11,7 +11,11 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createTask, updateTask, getTaskById } from '../services/tasks';
-import { requestCalendarPermission, syncTaskToCalendar } from '../services/calendarSync';
+import {
+  isTaskSyncedToCalendar,
+  requestCalendarPermission,
+  syncTaskToCalendar,
+} from '../services/calendarSync';
 import { TaskPriority, TaskRecurrence } from '../types/task';
 import VoiceCaptureButton from '../components/VoiceCaptureButton';
 
@@ -106,7 +110,7 @@ export default function CreateTaskScreen({ route, navigation }: any) {
       setReminderTime(task.reminder_time ? new Date(task.reminder_time) : undefined);
       setRecurrence((task.recurrence as TaskRecurrence) ?? 'none');
       setPriorityReminder(task.priority_reminder ?? false);
-      setCalendarSync(task.calendar_sync ?? false);
+      setCalendarSync(await isTaskSyncedToCalendar(task.id));
     } catch {
       Alert.alert("Couldn't load task", 'Please try again.');
     }
@@ -138,6 +142,7 @@ export default function CreateTaskScreen({ route, navigation }: any) {
     }
 
     setSaving(true);
+    let taskWasSaved = false;
     try {
       const dueDateEndOfDay = dueDate
         ? new Date(
@@ -170,16 +175,30 @@ export default function CreateTaskScreen({ route, navigation }: any) {
       } else {
         savedTask = await createTask(payload);
       }
+      taskWasSaved = true;
 
       const activeTaskId = taskId || savedTask?.id;
 
       if (activeTaskId) {
-        await syncTaskToCalendar({ ...savedTask, id: activeTaskId, calendar_sync: calendarSyncForSave });
+        const calendarEventId = await syncTaskToCalendar({
+          ...savedTask,
+          id: activeTaskId,
+          calendar_sync: calendarSyncForSave,
+        });
+        if (calendarSyncForSave && !calendarEventId) {
+          Alert.alert(
+            'Task saved, not added to calendar',
+            'Add a due date or reminder time to place this task on your device calendar.',
+          );
+        }
       }
 
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert("Couldn't save task", err.message ?? 'Please try again.');
+      Alert.alert(
+        taskWasSaved ? 'Task saved, but calendar sync failed' : "Couldn't save task",
+        err.message ?? 'Please try again.',
+      );
     } finally {
       setSaving(false);
     }
