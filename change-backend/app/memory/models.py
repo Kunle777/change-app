@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,6 +14,8 @@ from app.memory.config import EMBEDDING_DIM
 class MemoryChunk(Base):
     __tablename__ = "memory_chunks"
     __table_args__ = (
+        Index("ix_memory_chunks_user_source", "user_id", "source_type"),
+        Index("ix_memory_chunks_user_created", "user_id", "source_created_at"),
         UniqueConstraint("source_type", "source_id", "chunk_index", name="uq_memory_chunks_source"),
     )
 

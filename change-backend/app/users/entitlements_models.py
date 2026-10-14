@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, ForeignKey, DateTime
+from sqlalchemy import Boolean, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -9,6 +9,9 @@ from app.database import Base
 
 class FeatureEntitlements(Base):
     __tablename__ = "feature_entitlements"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_feature_entitlements_user_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -16,8 +19,7 @@ class FeatureEntitlements(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        unique=True,
-        index=True,
+        nullable=False,
     )
     ai_enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
     brain_dump_enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")

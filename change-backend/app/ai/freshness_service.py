@@ -1,21 +1,27 @@
+import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.tasks.models import TaskEvent
-from app.checkins.models import CheckIn
 from app.braindump.models import BrainDump
+from app.checkins.models import CheckIn
+from app.tasks.models import Task, TaskEvent, TaskEventOutbox
+from app.users.models import User
+
+logger = logging.getLogger(__name__)
+DEFAULT_TIMEZONE = "Africa/Lagos"
 
 
 class FreshnessTier(str, Enum):
-    FRESH = "fresh"       # activity within the last 2 days
-    AGING = "aging"       # 3-7 days
-    STALE = "stale"       # 8-21 days
-    DORMANT = "dormant"   # 22+ days or never
+    FRESH = "fresh"
+    AGING = "aging"
+    STALE = "stale"
+    DORMANT = "dormant"
 
 
 @dataclass
@@ -26,21 +32,11 @@ class DataFreshness:
     tier: FreshnessTier
 
     def to_prompt_line(self) -> str:
-        """
-        Turns the signal into a plain-English line for the system prompt.
-        Deliberately factual, not editorializing — the model forms its own
-        tone from this, it doesn't need to be told how to feel about it.
-        """
-        parts = []
-        parts.append(
-            f"tasks: {self._describe(self.days_since_task_activity)}"
-        )
-        parts.append(
-            f"check-ins: {self._describe(self.days_since_checkin)}"
-        )
-        parts.append(
-            f"brain dumps: {self._describe(self.days_since_brain_dump)}"
-        )
+        parts = [
+            f"tasks: {self._describe(self.days_since_task_activity)}",
+            f"check-ins: {self._describe(self.days_since_checkin)}",
+            f"brain dumps: {self._describe(self.days_since_brain_dump)}",
+        ]
         return "Recent activity — " + "; ".join(parts) + "."
 
     @staticmethod
@@ -54,43 +50,107 @@ class DataFreshness:
         return f"{days} days ago"
 
 
-async def _days_since(db: AsyncSession, stmt) -> int | None:
-    result = await db.execute(stmt)
-    most_recent = result.scalar_one_or_none()
+async def resolve_user_timezone(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    timezone_name: str | None = None,
+) -> ZoneInfo:
+    if timezone_name:
+        try:
+            return ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            logger.warning("Invalid user timezone; trying the stored timezone")
+
+    result = await db.execute(
+        select(User.last_active_timezone).where(User.id == user_id)
+    )
+    stored_timezone = result.scalar_one_or_none()
+    if stored_timezone:
+        try:
+            return ZoneInfo(stored_timezone)
+        except ZoneInfoNotFoundError:
+            logger.warning("Invalid stored user timezone; using %s", DEFAULT_TIMEZONE)
+
+    return ZoneInfo(DEFAULT_TIMEZONE)
+
+
+def _days_since(
+    most_recent: datetime | None,
+    user_timezone: ZoneInfo,
+    local_today: date,
+) -> int | None:
     if most_recent is None:
         return None
-    delta = datetime.now(timezone.utc) - most_recent
-    return max(delta.days, 0)
+    if most_recent.tzinfo is None:
+        most_recent = most_recent.replace(tzinfo=timezone.utc)
+    activity_date = most_recent.astimezone(user_timezone).date()
+    return max((local_today - activity_date).days, 0)
 
 
-async def compute_data_freshness(db: AsyncSession, user_id: uuid.UUID) -> DataFreshness:
-    days_tasks = await _days_since(
+async def _latest_activity_days(
+    db: AsyncSession,
+    statement,
+    user_timezone: ZoneInfo,
+    local_today: date,
+) -> int | None:
+    result = await db.execute(statement)
+    return _days_since(result.scalar_one_or_none(), user_timezone, local_today)
+
+
+async def compute_data_freshness(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    timezone_name: str | None = None,
+) -> DataFreshness:
+    user_timezone = await resolve_user_timezone(db, user_id, timezone_name)
+    local_today = datetime.now(user_timezone).date()
+
+    task_activity = union_all(
+        select(TaskEvent.occurred_at.label("activity_at")).where(
+            TaskEvent.user_id == user_id
+        ),
+        select(TaskEventOutbox.occurred_at.label("activity_at")).where(
+            TaskEventOutbox.user_id == user_id
+        ),
+        select(Task.created_at.label("activity_at")).where(Task.user_id == user_id),
+        select(Task.completed_at.label("activity_at")).where(
+            Task.user_id == user_id,
+            Task.completed_at.is_not(None),
+        ),
+        select(Task.deleted_at.label("activity_at")).where(
+            Task.user_id == user_id,
+            Task.deleted_at.is_not(None),
+        ),
+    ).subquery("task_activity")
+
+    days_tasks = await _latest_activity_days(
         db,
-        select(func.max(TaskEvent.occurred_at)).where(TaskEvent.user_id == user_id),
+        select(func.max(task_activity.c.activity_at)),
+        user_timezone,
+        local_today,
     )
-    days_checkin = await _days_since(
+    days_checkin = await _latest_activity_days(
         db,
         select(func.max(CheckIn.created_at)).where(CheckIn.user_id == user_id),
+        user_timezone,
+        local_today,
     )
-    days_dump = await _days_since(
+    days_dump = await _latest_activity_days(
         db,
         select(func.max(BrainDump.created_at)).where(BrainDump.user_id == user_id),
+        user_timezone,
+        local_today,
     )
 
-    # Overall tier takes the FRESHEST of the three signals, not the stalest —
-    # a user who's actively logging tasks but skipping check-ins shouldn't be
-    # treated as fully dormant just because one channel is quiet.
     best = min(
-        (d for d in (days_tasks, days_checkin, days_dump) if d is not None),
+        (days for days in (days_tasks, days_checkin, days_dump) if days is not None),
         default=None,
     )
-    tier = _tier_for(best)
-
     return DataFreshness(
         days_since_task_activity=days_tasks,
         days_since_checkin=days_checkin,
         days_since_brain_dump=days_dump,
-        tier=tier,
+        tier=_tier_for(best),
     )
 
 
