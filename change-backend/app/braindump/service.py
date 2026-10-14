@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import gemini
 from app.braindump.models import BrainDump
 from app.braindump.schemas import BrainDumpCreate, ParsedTaskSuggestion, SuggestedRecurrenceRule
+from app.memory.service import delete_source_chunks
+from app.memory.tasks import enqueue_memory_source_index
 from app.tasks.models import PriorityEnum, Task, TaskEventType, TaskSeries
 from app.tasks.schemas import TaskCreate
 from app.tasks.task_event_service import log_task_event
@@ -26,6 +28,11 @@ async def create_brain_dump(db: AsyncSession, brain_dump: BrainDumpCreate, user_
     db.add(db_brain_dump)
     await db.commit()
     await db.refresh(db_brain_dump)
+    enqueue_memory_source_index(
+        source_type="brain_dump",
+        source_id=db_brain_dump.id,
+        user_id=user_id,
+    )
     return db_brain_dump
 
 
@@ -47,6 +54,12 @@ async def delete_brain_dump(db: AsyncSession, brain_dump_id: uuid.UUID, user_id:
     brain_dump = await get_brain_dump_by_id(db, brain_dump_id, user_id)
     if not brain_dump:
         return None
+    await delete_source_chunks(
+        db,
+        source_type="brain_dump",
+        source_id=brain_dump_id,
+        user_id=user_id,
+    )
     await db.delete(brain_dump)
     await db.commit()
     return brain_dump

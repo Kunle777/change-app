@@ -41,6 +41,7 @@ from app.database import Base
 from app.users.models import User, UserTier
 from app.tasks.models import Task, TaskEvent, TaskEventOutbox, TaskSeries  # noqa: F401
 from app.braindump.models import BrainDump
+from app.memory.models import MemoryChunk  # noqa: F401
 from app.ai.models import AIUsageLog, AIInteraction, Conversation, PendingAction  # noqa: F401
 from app.wins.models import Win  # noqa: F401
 from app.checkins.models import CheckInType
@@ -113,4 +114,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

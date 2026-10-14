@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.checkins.models import CheckIn, CheckInType
 from app.checkins.schemas import CheckInCreate, CheckInResponse, MorningCheckInCreate, EveningCheckInCreate
+from app.memory.tasks import enqueue_memory_source_index
 from typing import Union, List
 from datetime import datetime, timedelta, timezone
 async def get_checkin_by_id(db: AsyncSession, checkin_id: uuid.UUID, user_id: uuid.UUID):
@@ -18,6 +19,11 @@ async def create_checkin(db: AsyncSession, checkin_data: Union[MorningCheckInCre
     db.add(db_checkin)
     await db.commit()
     await db.refresh(db_checkin)
+    enqueue_memory_source_index(
+        source_type="check_in",
+        source_id=db_checkin.id,
+        user_id=user_id,
+    )
     return db_checkin
 
 async def get_checkin_history(db: AsyncSession, user_id: uuid.UUID, limit: int = 20) -> List[CheckIn]:

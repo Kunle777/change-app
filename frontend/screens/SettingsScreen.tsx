@@ -186,6 +186,17 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </View>
+
+      <Text style={[styles.sectionTitle, { marginTop: 28 }]}>AI and memory</Text>
+      <View style={styles.infoCard}>
+        <Text style={styles.infoTitle}>How searchable memory uses your text</Text>
+        <Text style={styles.infoSublabel}>
+          When AI is enabled for your account, original Brain Dump text and check-in goals or
+          reflections may be sent to Google Gemini to create searchable memory vectors. AI-generated
+          summaries are not indexed. Deleting a Brain Dump also deletes its memory vectors, and
+          search results are limited to your account.
+        </Text>
+      </View>
     </ScrollView>
   );
 }
