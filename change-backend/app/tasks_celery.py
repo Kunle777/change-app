@@ -17,7 +17,24 @@ from app.tasks.models import TaskEventType
 from app.tasks.task_event_service import log_task_event
 from sqlalchemy import select, and_
 from fcm import send_push_notification
-from app.savings.service import check_and_process_matured_vaults
+
+
+def _send_remote_reminder(task: Task) -> bool:
+    if not task.user or not task.user.fcm_token:
+        print(f"No FCM token for task {task.id}, user={task.user_id}")
+        return False
+    try:
+        sent = send_push_notification(
+            task.user.fcm_token,
+            title="Task Reminder",
+            body=task.title,
+        )
+    except Exception as error:
+        print(f"FCM send failed for task {task.id}: {error}")
+        return False
+    if sent:
+        task.is_reminder_sent = True
+    return sent
 
 
 async def _check_reminders_async():
@@ -54,18 +71,8 @@ async def _check_reminders_async():
             if local_scheduled:
                 # Expo owns this reminder on-device; skip FCM to avoid duplicate alerts.
                 task.is_reminder_sent = True
-            elif task.user and task.user.fcm_token:
-                try:
-                    send_push_notification(
-                        task.user.fcm_token,
-                        title="Task Reminder",
-                        body=task.title,
-                    )
-                    task.is_reminder_sent = True
-                except Exception as e:
-                    print(f"FCM send failed for task {task.id}: {e}")
             else:
-                print(f"No FCM token for task {task.id}, user={task.user_id}")
+                _send_remote_reminder(task)
         await db.commit()
 
 
@@ -145,7 +152,3 @@ def spawn_recurring_task_job():
 def say_hello(name: str):
     print(f"Sending hello to {name}")
     return f"Hello, {name}!"
-
-@celery_app.task
-def process_matured_vaults():
-    asyncio.run(check_and_process_matured_vaults())

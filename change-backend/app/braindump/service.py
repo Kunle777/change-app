@@ -2,15 +2,18 @@ import asyncio
 import json
 import re
 import uuid
-from datetime import datetime
-import uuid
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import gemini
+from app.ai.prompt_builder import build_system_prompt_for_user
 from app.braindump.models import BrainDump
 from app.braindump.schemas import BrainDumpCreate, ParsedTaskSuggestion, SuggestedRecurrenceRule
+from app.memory.service import delete_source_chunks
+from app.memory.tasks import enqueue_memory_source_index
 from app.tasks.models import PriorityEnum, Task, TaskEventType, TaskSeries
 from app.tasks.schemas import TaskCreate
 from app.tasks.task_event_service import log_task_event
@@ -26,6 +29,11 @@ async def create_brain_dump(db: AsyncSession, brain_dump: BrainDumpCreate, user_
     db.add(db_brain_dump)
     await db.commit()
     await db.refresh(db_brain_dump)
+    enqueue_memory_source_index(
+        source_type="brain_dump",
+        source_id=db_brain_dump.id,
+        user_id=user_id,
+    )
     return db_brain_dump
 
 
@@ -47,6 +55,12 @@ async def delete_brain_dump(db: AsyncSession, brain_dump_id: uuid.UUID, user_id:
     brain_dump = await get_brain_dump_by_id(db, brain_dump_id, user_id)
     if not brain_dump:
         return None
+    await delete_source_chunks(
+        db,
+        source_type="brain_dump",
+        source_id=brain_dump_id,
+        user_id=user_id,
+    )
     await db.delete(brain_dump)
     await db.commit()
     return brain_dump
@@ -64,14 +78,20 @@ async def parse_dump(db: AsyncSession, dump_id: uuid.UUID, user_id: uuid.UUID):
     if not dump:
         return None
 
-    prompt = (
-        "Extract distinct actionable tasks from the note. Return a JSON array; each item "
-        'must contain "title" (short, action-oriented) and "priority" '
-        '(low, medium, or high). Include "recurrence_rule" only when the note clearly '
-        'requests repetition; it must contain frequency (daily, weekly, or monthly), '
-        'interval, and optional days_of_week using Monday=0 through Sunday=6. Do not '
-        'include reminder times, due dates, or an inferred start date. Return [] if '
-        "there are no actionable tasks. Do not invent tasks.\n\nNote:\n" + dump.content
+    prompt, _ = await build_system_prompt_for_user(
+        db,
+        user_id,
+        "task_planning",
+        f"Brain Dump note:\n{dump.content}",
+        additional_instructions=(
+            "Extract distinct actionable tasks from the supplied note and return a JSON "
+            "array. Each item must contain 'title' (short, action-oriented) and 'priority' "
+            "('low', 'medium', or 'high'). Include 'recurrence_rule' only when the note "
+            "clearly requests repetition; it must contain frequency ('daily', 'weekly', "
+            "or 'monthly'), interval, and optional days_of_week using Monday=0 through "
+            "Sunday=6. Do not include reminder times, due dates, or an inferred start "
+            "date. Return [] if there are no actionable tasks. Do not invent tasks."
+        ),
     )
     try:
         raw = await asyncio.to_thread(gemini.generate_response, prompt)
@@ -120,6 +140,7 @@ async def convert_to_task(
     dump_id: uuid.UUID,
     user_id: uuid.UUID,
     suggestions: list[dict],
+    timezone_name: str = "Africa/Lagos",
 ):
     # Serialize conversions of the same dump so a retry or double tap cannot
     # create duplicate tasks. The row lock is held through the single commit.
@@ -150,11 +171,28 @@ async def convert_to_task(
         raw_rule = suggestion.get("recurrence_rule")
         series = None
         due_date = None
+        reminder_time = None
         recurrence = None
+        suggested_date = suggestion.get("due_date")
+        suggested_time = suggestion.get("time")
+        zone = ZoneInfo(timezone_name)
+        if suggested_date is not None:
+            if isinstance(suggested_date, str):
+                suggested_date = date.fromisoformat(suggested_date)
+            due_date = datetime.combine(
+                suggested_date,
+                time.max,
+                tzinfo=zone,
+            ).astimezone(timezone.utc)
+            if suggested_time is not None:
+                if isinstance(suggested_time, str):
+                    suggested_time = time.fromisoformat(suggested_time)
+                reminder_time = datetime.combine(
+                    suggested_date,
+                    suggested_time,
+                    tzinfo=zone,
+                ).astimezone(timezone.utc)
         if isinstance(raw_rule, dict):
-            from zoneinfo import ZoneInfo
-            from datetime import time, timezone
-
             from app.tasks.schemas import TaskRecurrenceCreate
 
             try:
@@ -200,7 +238,7 @@ async def convert_to_task(
             status=task_data.status,
             description=task_data.description,
             due_date=due_date or task_data.due_date,
-            reminder_time=task_data.reminder_time,
+            reminder_time=reminder_time or task_data.reminder_time,
             recurrence=recurrence or (task_data.recurrence.name if task_data.recurrence else None),
             series_id=series.id if series else None,
             occurrence_date=series.start_date if series else None,

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
-from app.Users.models import User
+from app.users.models import User
 
 class CheckInType(str, enum.Enum):
     morning = "morning"
@@ -26,3 +26,6 @@ class CheckIn(Base):
     goal_status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )

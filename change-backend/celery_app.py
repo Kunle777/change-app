@@ -11,7 +11,7 @@ celery_app = Celery(
     "change",
     broker=os.getenv("REDIS_URL"),
     backend=os.getenv("REDIS_URL"),
-    include=["app.tasks_celery"],
+    include=["app.tasks_celery", "app.memory.tasks"],
 )
 
 celery_app.conf.update(
@@ -43,11 +43,9 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks_celery.deliver_task_event_outbox_job",
         "schedule": crontab(minute="*"),
     },
-        # ... your existing check_reminders entry stays as-is ...
-    "process-matured-vaults": {
-        "task": "app.savings.tasks_celery.process_matured_vaults",
-        "schedule": crontab(minute="0"),  # hourly, on the hour
+    "sweep-memory-index": {
+        "task": "app.memory.tasks.sweep_memory_index_job",
+        "schedule": crontab(minute="*/15"),
     },
 }
-
 

@@ -1,4 +1,9 @@
 venv/
 .env
 .firebase-credentials.json
+firebase-credentials.json
 node_modules/
+
+# Local nested repositories/worktrees are preserved outside the root project tree.
+/.merge-review-worktree/
+/savings-vault-ledger/

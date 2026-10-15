@@ -11,8 +11,11 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createTask, updateTask, getTaskById } from '../services/tasks';
-import { scheduleTaskReminder, cancelTaskReminder } from '../services/notifications';
-import { requestCalendarPermission, syncTaskToCalendar } from '../services/calendarSync';
+import {
+  isTaskSyncedToCalendar,
+  requestCalendarPermission,
+  syncTaskToCalendar,
+} from '../services/calendarSync';
 import { TaskPriority, TaskRecurrence } from '../types/task';
 import VoiceCaptureButton from '../components/VoiceCaptureButton';
 
@@ -50,6 +53,13 @@ function parsePrefillReminder(dueDate?: string, time?: string): Date | undefined
   }
 
   return parseDate(time);
+}
+
+function combineReminderDate(dueDate: Date | undefined, reminderTime: Date): Date {
+  if (!dueDate) return reminderTime;
+  const combined = new Date(dueDate);
+  combined.setHours(reminderTime.getHours(), reminderTime.getMinutes(), 0, 0);
+  return combined;
 }
 
 function isTaskPriority(value?: string): value is TaskPriority {
@@ -100,7 +110,7 @@ export default function CreateTaskScreen({ route, navigation }: any) {
       setReminderTime(task.reminder_time ? new Date(task.reminder_time) : undefined);
       setRecurrence((task.recurrence as TaskRecurrence) ?? 'none');
       setPriorityReminder(task.priority_reminder ?? false);
-      setCalendarSync(task.calendar_sync ?? false);
+      setCalendarSync(await isTaskSyncedToCalendar(task.id));
     } catch {
       Alert.alert("Couldn't load task", 'Please try again.');
     }
@@ -132,13 +142,28 @@ export default function CreateTaskScreen({ route, navigation }: any) {
     }
 
     setSaving(true);
+    let taskWasSaved = false;
     try {
+      const dueDateEndOfDay = dueDate
+        ? new Date(
+            dueDate.getFullYear(),
+            dueDate.getMonth(),
+            dueDate.getDate(),
+            23,
+            59,
+            59,
+            999,
+          )
+        : undefined;
+      const reminderDateForSave = reminderTime
+        ? combineReminderDate(dueDate, reminderTime)
+        : undefined;
       const payload = {
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
-        due_date: dueDate?.toISOString(),
-        reminder_time: reminderTime?.toISOString(),
+        due_date: dueDateEndOfDay?.toISOString(),
+        reminder_time: reminderDateForSave?.toISOString(),
         recurrence: recurrence === 'none' ? undefined : recurrence,
         priority_reminder: priorityReminder,
         calendar_sync: calendarSyncForSave,
@@ -150,23 +175,30 @@ export default function CreateTaskScreen({ route, navigation }: any) {
       } else {
         savedTask = await createTask(payload);
       }
+      taskWasSaved = true;
 
       const activeTaskId = taskId || savedTask?.id;
 
-      // Local Notification Handling
       if (activeTaskId) {
-        if (reminderTime && reminderTime.getTime() > Date.now()) {
-          await scheduleTaskReminder(activeTaskId, title.trim(), reminderTime, priorityReminder);
-        } else {
-          await cancelTaskReminder(activeTaskId);
+        const calendarEventId = await syncTaskToCalendar({
+          ...savedTask,
+          id: activeTaskId,
+          calendar_sync: calendarSyncForSave,
+        });
+        if (calendarSyncForSave && !calendarEventId) {
+          Alert.alert(
+            'Task saved, not added to calendar',
+            'Add a due date or reminder time to place this task on your device calendar.',
+          );
         }
-
-        await syncTaskToCalendar({ ...savedTask, id: activeTaskId, calendar_sync: calendarSyncForSave });
       }
 
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert("Couldn't save task", err.message ?? 'Please try again.');
+      Alert.alert(
+        taskWasSaved ? 'Task saved, but calendar sync failed' : "Couldn't save task",
+        err.message ?? 'Please try again.',
+      );
     } finally {
       setSaving(false);
     }

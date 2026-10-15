@@ -22,6 +22,10 @@ export interface CalendarSyncTask {
 
 const eventKey = (taskId: string) => `${EVENT_KEY_PREFIX}${taskId}`;
 
+export async function isTaskSyncedToCalendar(taskId: string): Promise<boolean> {
+  return Boolean(await AsyncStorage.getItem(eventKey(taskId)));
+}
+
 function validDate(value?: string | null): Date | null {
   const date = value ? new Date(value) : null;
   return date && Number.isFinite(date.getTime()) ? date : null;
@@ -55,14 +59,24 @@ async function getWritableCalendarId(): Promise<string | null> {
 }
 
 function makeEvent(task: CalendarSyncTask, calendarId: string) {
-  const startDate = validDate(task.due_date) ?? validDate(task.reminder_time);
+  const reminderDate = validDate(task.reminder_time);
+  const dueDate = validDate(task.due_date);
+  const startDate = reminderDate ?? dueDate;
   if (!startDate) return null;
+  const allDay = !reminderDate && Boolean(dueDate);
+  const eventStartDate = allDay
+    ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+    : startDate;
+  const eventEndDate = allDay
+    ? new Date(eventStartDate.getFullYear(), eventStartDate.getMonth(), eventStartDate.getDate() + 1)
+    : new Date(eventStartDate.getTime() + 60 * 60 * 1000);
   return {
     calendarId,
     title: task.title,
     notes: task.description || undefined,
-    startDate,
-    endDate: new Date(startDate.getTime() + 60 * 60 * 1000),
+    startDate: eventStartDate,
+    endDate: eventEndDate,
+    allDay,
   };
 }
 
@@ -70,6 +84,9 @@ export async function syncTaskToCalendar(task: CalendarSyncTask): Promise<string
   const key = eventKey(task.id);
   const eventId = await AsyncStorage.getItem(key);
   const calendarId = task.calendar_sync ? await getWritableCalendarId() : null;
+  if (task.calendar_sync && !calendarId) {
+    throw new Error('No writable calendar is available on this device.');
+  }
   const event = calendarId ? makeEvent(task, calendarId) : null;
   if (!event) {
     if (eventId) await removeTaskFromCalendar(task.id);

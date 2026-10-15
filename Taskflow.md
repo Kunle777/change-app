@@ -57,7 +57,7 @@ If an outbox insert itself fails or times out, the task action proceeds without 
 
 - `ThemeProvider` stores the `system`, `light`, or `dark` choice in AsyncStorage. `useColors()` returns the corresponding palette, and React Navigation receives the resolved theme.
 - The More tab includes Appearance and log out. Deferred destinations are marked "Coming soon"; the existing Settings screen remains reachable.
-- The palette is applied to Appearance, More, Check-in, Brain Dump, Home, Task Detail, and the task row/action controls. Older screens such as Savings and account setup still need a broader visual pass for full dark-mode coverage.
+- The palette is applied to Appearance, More, Check-in, Brain Dump, Home, Task Detail, and the task row/action controls. Older account setup screens still need a broader visual pass for full dark-mode coverage.
 
 ## Apply backend migrations
 

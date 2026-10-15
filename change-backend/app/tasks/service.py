@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
+from app.ai.prompt_builder import build_system_prompt_for_user
 from app.tasks.models import (
     Task,
     StatusEnum,
@@ -19,6 +20,12 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import selectinload
 from app.tasks.task_event_service import log_task_event
 from app.tasks.recurrence_service import stop_task_series
+
+
+def _local_day_start_utc(timezone_name: str | None, target_date: date | None = None) -> datetime:
+    zone = ZoneInfo(timezone_name or "Africa/Lagos")
+    local_date = target_date or datetime.now(zone).date()
+    return datetime.combine(local_date, time.min, tzinfo=zone).astimezone(timezone.utc)
 
 
 async def edit_task_series(
@@ -71,7 +78,13 @@ def _utc(dt: datetime | None) -> datetime | None:
         return None
     return dt.astimezone(timezone.utc)
 
-async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUID):
+async def create_task(
+    db: AsyncSession,
+    task_data: TaskCreate,
+    user_id: uuid.UUID,
+    *,
+    commit: bool = True,
+):
     rule = task_data.recurrence_rule
     series = None
     if rule is not None:
@@ -107,6 +120,7 @@ async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUI
         title=task_data.title,
         priority=task_data.priority,
         status=task_data.status,
+        priority_reminder=task_data.priority_reminder,
         description=task_data.description,
         due_date=_utc(due_date),
         reminder_time=_utc(reminder_time),
@@ -122,8 +136,11 @@ async def create_task(db: AsyncSession, task_data: TaskCreate, user_id: uuid.UUI
         task_id=db_task.id,
         event_type=TaskEventType.CREATED,
     )
-    await db.commit()
-    await db.refresh(db_task)
+    if commit:
+        await db.commit()
+        await db.refresh(db_task)
+    else:
+        await db.flush()
     return db_task
 
 async def get_tasks_for_user(db: AsyncSession, user_id: uuid.UUID):
@@ -137,6 +154,20 @@ async def get_tasks_for_user(db: AsyncSession, user_id: uuid.UUID):
                 Task.completed_at >= cutoff,
             )
         )
+    )
+    return result.scalars().all()
+
+
+async def get_undated_tasks(db: AsyncSession, user_id: uuid.UUID):
+    result = await db.execute(
+        select(Task)
+        .where(
+            Task.user_id == user_id,
+            Task.is_deleted.is_(False),
+            Task.status == StatusEnum.pending,
+            Task.due_date.is_(None),
+        )
+        .order_by(Task.created_at.desc())
     )
     return result.scalars().all()
 
@@ -156,17 +187,31 @@ async def get_upcoming_tasks(db: AsyncSession, user_id: uuid.UUID, days: int = 1
     )
     return result.scalars().all()
 
-async def get_task_by_id(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
-    result = await db.execute(
-        select(Task).where(
-            Task.id == task_id,
-            Task.user_id == user_id,
-            Task.is_deleted.is_(False),
-        )
+async def get_task_by_id(
+    db: AsyncSession,
+    task_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+):
+    query = select(Task).where(
+        Task.id == task_id,
+        Task.user_id == user_id,
+        Task.is_deleted.is_(False),
     )
+    if for_update:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    result = await db.execute(query)
     return result.scalar_one_or_none()
     
-async def update_task(db: AsyncSession, task_id: uuid.UUID, task_data: TaskUpdate, user_id: uuid.UUID):
+async def update_task(
+    db: AsyncSession,
+    task_id: uuid.UUID,
+    task_data: TaskUpdate,
+    user_id: uuid.UUID,
+    *,
+    commit: bool = True,
+):
     db_task = await get_task_by_id(db, task_id, user_id)
     if not db_task:
         return None
@@ -221,9 +266,13 @@ async def update_task(db: AsyncSession, task_id: uuid.UUID, task_data: TaskUpdat
                 "new_reminder_time": db_task.reminder_time.isoformat() if db_task.reminder_time else None,
             },
         )
-    await db.commit()
-    await db.refresh(db_task)
+    if commit:
+        await db.commit()
+        await db.refresh(db_task)
+    else:
+        await db.flush()
     return db_task
+
 
 async def delete_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
     db_task = await get_task_by_id(db, task_id, user_id)
@@ -279,14 +328,19 @@ async def snooze_task(
     return db_task
 
 
-async def get_overdue_tasks(db: AsyncSession, user_id: uuid.UUID):
-    current_time = datetime.now(timezone.utc)
+async def get_overdue_tasks(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    timezone_name: str | None = None,
+):
+    start_of_today = _local_day_start_utc(timezone_name)
     result = await db.execute(
         select(Task).where(
             and_(
                 Task.user_id == user_id,
-                Task.due_date < current_time,
-                Task.status != StatusEnum.completed
+                Task.due_date < start_of_today,
+                Task.status.in_([StatusEnum.pending, StatusEnum.in_progress]),
+                Task.is_deleted.is_(False),
             )
         )
     )
@@ -359,15 +413,22 @@ async def breakdown_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUI
     if task is  None:
         raise ValueError("Task not found ")
 
-
-    prompt = (
-        f"Break the following task into 3-6 small, concrete, actionable steps. "
+    context = (
         f"Task title: {task.title}\n"
-        f"Task description: {task.description or 'No description provided'}\n"
-        f"Respond with ONLY a JSON array of strings, each string one step. "
-        f"No extra text, no markdown formatting."
+        f"Task description: {task.description or 'No description provided'}"
     )
-   
+    prompt, _ = await build_system_prompt_for_user(
+        db,
+        user_id,
+        "task_help",
+        context,
+        additional_instructions=(
+            "Break the supplied task into 3-6 small, concrete, actionable steps. "
+            "Respond with only a JSON array of strings, each string one step. "
+            "Do not include extra text or markdown formatting."
+        ),
+    )
+
     steps = gemini.generate_structured(prompt)
     return steps
 
@@ -401,7 +462,6 @@ async def mark_task_completed(db: AsyncSession, task_id: uuid.UUID, user_id: uui
             event_type=TaskEventType.COMPLETED,
         )
     await db.commit()
-    await db.refresh(task)
     return task
 
 async def reschedule_task(db: AsyncSession, task_id, user_id, due_date, reminder_time) -> Task | None:
@@ -442,7 +502,13 @@ async def reschedule_task(db: AsyncSession, task_id, user_id, due_date, reminder
     await db.refresh(task)
     return task
 
-async def cancel_task(db: AsyncSession, task_id, user_id) -> Task | None:
+async def cancel_task(
+    db: AsyncSession,
+    task_id,
+    user_id,
+    *,
+    commit: bool = True,
+) -> Task | None:
     task = await get_task_by_id(db, task_id, user_id)
     if not task:
         return None
@@ -456,8 +522,11 @@ async def cancel_task(db: AsyncSession, task_id, user_id) -> Task | None:
             task_id=task.id,
             event_type=TaskEventType.CANCELLED,
         )
-    await db.commit()
-    await db.refresh(task)
+    if commit:
+        await db.commit()
+        await db.refresh(task)
+    else:
+        await db.flush()
     return task
 
 
@@ -479,15 +548,23 @@ async def get_task_dates_for_month(db: AsyncSession, user_id, year: int, month: 
 
 
 async def get_tasks_for_date(
-    db: AsyncSession, user_id, target_date: date, status_filter: str = "all"
+    db: AsyncSession,
+    user_id,
+    target_date: date,
+    status_filter: str = "all",
+    timezone_name: str | None = None,
 ) -> list[Task]:
-    start = datetime.combine(target_date, time.min, tzinfo=timezone.utc)
-    end = datetime.combine(target_date, time.max, tzinfo=timezone.utc)
+    zone = ZoneInfo(timezone_name or "Africa/Lagos")
+    local_today = datetime.now(zone).date()
+    if status_filter == "overdue" and target_date >= local_today:
+        return []
+    start = _local_day_start_utc(timezone_name, target_date)
+    end = _local_day_start_utc(timezone_name, target_date + timedelta(days=1))
     query = select(Task).where(
         Task.user_id == user_id,
         Task.is_deleted.is_(False),
         Task.due_date >= start,
-        Task.due_date <= end,
+        Task.due_date < end,
     )
     if status_filter == "incomplete":
         query = query.where(Task.status == StatusEnum.pending)
@@ -496,7 +573,7 @@ async def get_tasks_for_date(
     elif status_filter == "overdue":
         query = query.where(
             Task.status == StatusEnum.pending,
-            Task.due_date < datetime.now(timezone.utc),
+            Task.due_date < _local_day_start_utc(timezone_name),
         )
     query = query.order_by(Task.status, Task.reminder_time)
     result = await db.execute(query)

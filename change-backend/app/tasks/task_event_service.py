@@ -123,13 +123,14 @@ async def deliver_task_event_outbox(db: AsyncSession, limit: int = 100) -> int:
                 await db.delete(outbox)
                 delivered += 1
             else:
-                outbox.attempts += 1
+                outbox.attempts = (outbox.attempts or 0) + 1
                 outbox.last_error = type(error).__name__
                 logger.warning("Task event %s remains queued after an integrity error", outbox.id)
         except Exception as error:
-            outbox.attempts += 1
+            outbox.attempts = (outbox.attempts or 0) + 1
             outbox.last_error = type(error).__name__[:100]
             logger.warning("Task event %s remains queued after delivery failure", outbox.id)
 
     await db.commit()
     return delivered
+

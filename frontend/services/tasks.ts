@@ -208,6 +208,14 @@ export async function getUpcomingTasks(days = 14): Promise<UpcomingReminderTask[
   return response.json();
 }
 
+export async function getUndatedTasks(): Promise<Task[]> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/undated`, {
+    headers: await getAuthHeader(),
+  });
+  if (!response.ok) throw new Error("Couldn't load undated tasks.");
+  return response.json();
+}
+
 export async function getCalendarDates(year: number, month: number): Promise<string[]> {
   const res = await fetch(`${API_BASE_URL}/api/tasks/calendar-dates?year=${year}&month=${month}`, {
     headers: await getAuthHeader(),

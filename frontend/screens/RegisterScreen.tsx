@@ -22,16 +22,21 @@ export default function RegisterScreen({ navigation }: Props) {
 
     setLoading(true);
     setError('');
-    const { data, error: authError } = await supabase.auth.signUp({ email, password });
-    if (authError) {
-      setError(authError.message);
-    } else if (data.session) {
-      const profile = await getCurrentProfile();
-      navigation.replace(profile.country_code ? 'MainTabs' : 'CountryConfirm');
-    } else {
-      navigation.navigate('Login');
+    try {
+      const { data, error: authError } = await supabase.auth.signUp({ email, password });
+      if (authError) {
+        setError(authError.message);
+      } else if (data.session) {
+        const profile = await getCurrentProfile();
+        navigation.replace(profile.country_code ? 'MainTabs' : 'CountryConfirm');
+      } else {
+        navigation.navigate('Login');
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to create account. Please try again.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

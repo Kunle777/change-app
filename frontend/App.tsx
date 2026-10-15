@@ -12,6 +12,7 @@ import { clearTaskReminders, reconcileNotifications } from './services/notificat
 import * as Notifications from 'expo-notifications';
 import { recordTaskEvent } from './services/taskEvents';
 import { recordDailyActivity } from './services/activity';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 function DeepLinkHandler() {
   const navigation = useNavigation<any>();
@@ -128,8 +129,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppContent />
-    </ThemeProvider>
+    <KeyboardProvider>
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
+    </KeyboardProvider>
   );
 }

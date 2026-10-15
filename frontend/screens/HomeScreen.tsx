@@ -15,6 +15,7 @@ import {
   cancelTask,
   completeTask,
   getTasksByDate,
+  getUndatedTasks,
   notNowTask,
   rescheduleTask,
 } from '../services/tasks';
@@ -40,6 +41,8 @@ function getGreeting() {
 export default function HomeScreen({ navigation }: any) {
   const [firstName, setFirstName] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [undatedTasks, setUndatedTasks] = useState<Task[]>([]);
+  const [undatedTasksError, setUndatedTasksError] = useState(false);
   const [checkInStatus, setCheckInStatus] = useState<{
     checkins_enabled: boolean;
     morning_done: boolean;
@@ -64,6 +67,13 @@ export default function HomeScreen({ navigation }: any) {
       setFirstName(profile.first_name ?? '');
       setTasks(todayTasks);
       setCheckInStatus(status);
+      setUndatedTasksError(false);
+      void getUndatedTasks()
+        .then(setUndatedTasks)
+        .catch((error) => {
+          console.log('Undated tasks load failed:', error);
+          setUndatedTasksError(true);
+        });
     } catch (error) {
       console.log('Home load failed:', error);
     }
@@ -220,6 +230,34 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={{ color: '#fff', fontWeight: '600' }}>+ Create task</Text>
           </TouchableOpacity>
         </View>
+        {(undatedTasks.length > 0 || undatedTasksError) && (
+          <View style={{ backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 16, padding: 16, marginBottom: 24 }}>
+            <Text style={{ fontWeight: '700', fontSize: 15, marginBottom: 8 }}>
+              To-do <Text style={{ fontSize: 12, color: '#888' }}>(no date)</Text>
+            </Text>
+            {undatedTasksError && (
+              <Text style={{ color: '#888', paddingVertical: 8 }}>
+                Couldn't load undated tasks. Pull to refresh and try again.
+              </Text>
+            )}
+            <FlatList
+              data={undatedTasks}
+              keyExtractor={(task) => task.id}
+              scrollEnabled={false}
+              renderItem={({ item }) => (
+                <TaskRow
+                  task={item}
+                  onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
+                  onToggleComplete={() => completeTask(item.id).then(loadAll)}
+                  onMore={() => {
+                    setActiveTask(item);
+                    setSheetVisible(true);
+                  }}
+                />
+              )}
+            />
+          </View>
+        )}
       </ScrollView>
 
       <TaskActionSheet

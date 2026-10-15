@@ -17,14 +17,9 @@ import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import TaskDetailScreen from '../screens/TaskDetailScreen';
 import CalendarScreen from '../screens/CalenderScreen';
 import CreateTaskScreen from '../screens/CreateTaskScreen';
+import WinLogScreen from '../screens/WinLogScreen';
 import { Ionicons } from '@expo/vector-icons';
 import PasscodeSetupScreen from '../screens/PasscodeSetupScreen';
-import BankAccountSetupScreen from '../screens/BankAccountSetupScreen';
-import CreateVaultScreen from '../screens/CreateVaultScreen';
-import SavingsScreen from '../screens/SavingsScreen';
-import DepositScreen from '../screens/DepositScreen';
-import WithdrawalPinSetupScreen from '../screens/WithdrawalPinSetupScreen';
-import WithdrawScreen from '../screens/WithdrawScreen';
 import CountryConfirmScreen from '../screens/CountryConfirmScreen';
 import { useColors } from '../theme/colors';
 
@@ -42,20 +37,14 @@ export type RootStackParamList = {
   Appearance: undefined;
   CheckIn: { type: 'morning' | 'evening' };
   Calendar: undefined;
+  WinLog: undefined;
   PasscodeSetup: undefined;
-  BankAccountSetup: undefined;
-  CreateVault: undefined;
-  Savings: undefined;
-  Deposit: { vaultId: string; vaultName: string };
-  WithdrawalPinSetup: undefined;
-  Withdraw: { vaultId: string; vaultName: string };
 };
 
 export type MainTabParamList = {
   Home: undefined;
-  AI: undefined;
   BrainDump: undefined;
-  Savings: undefined;
+  AI: undefined;
   More: undefined;
 };
 
@@ -82,13 +71,6 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="AI"
-        component={AIScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" color={color} size={size} />,
-        }}
-      />
-      <Tab.Screen
         name="BrainDump"
         component={BrainDumpScreen}
         options={{
@@ -97,10 +79,10 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="Savings"
-        component={SavingsScreen}
+        name="AI"
+        component={AIScreen}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="wallet" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" color={color} size={size} />,
         }}
       />
       <Tab.Screen
@@ -141,6 +123,7 @@ export default function AppNavigator() {
         options={{ headerShown: true, title: 'Change Password' }}
       />
       <Stack.Screen name="MainTabs" component={MainTabs} />
+      <Stack.Screen name="WinLog" component={WinLogScreen} options={{ headerShown: true, title: "Win Log" }} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="Appearance" component={AppearanceScreen} />
       <Stack.Screen
@@ -167,36 +150,6 @@ export default function AppNavigator() {
         name="PasscodeSetup"
         component={PasscodeSetupScreen}
         options={{ headerShown: true, title: 'Passcode' }}
-      />
-      <Stack.Screen
-        name="BankAccountSetup"
-        component={BankAccountSetupScreen}
-        options={{ headerShown: true, title: 'Bank account' }}
-      />
-      <Stack.Screen
-        name="CreateVault"
-        component={CreateVaultScreen}
-        options={{ headerShown: true, title: 'New vault' }}
-      />
-      <Stack.Screen
-        name="Savings"
-        component={SavingsScreen}
-        options={{ headerShown: true, title: 'Savings' }}
-      />
-      <Stack.Screen
-        name="Deposit"
-        component={DepositScreen}
-        options={{ headerShown: true, title: 'Deposit' }}
-      />
-      <Stack.Screen
-        name="WithdrawalPinSetup"
-        component={WithdrawalPinSetupScreen}
-        options={{ headerShown: true, title: 'Withdrawal PIN' }}
-      />
-      <Stack.Screen
-        name="Withdraw"
-        component={WithdrawScreen}
-        options={{ headerShown: true, title: 'Withdraw' }}
       />
     </Stack.Navigator>
   );

@@ -1,0 +1,3 @@
+# Savings feature removal deployment
+
+Apply `c814f9a1d70e_remove_savings_paystack.py` to the existing Supabase database during backend rollout with `alembic upgrade head`. It drops the four Savings tables, entitlement flag, Paystack payout columns, and Savings-only KYC columns. The owner confirmed that no real money moved through the feature and no Savings records need preservation. Back up the database and verify the target before applying: existing rows are permanently deleted. The migration has not been run against Supabase. Downgrade recreates empty schema only and cannot restore deleted data.

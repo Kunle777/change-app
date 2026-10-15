@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time as time_type
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from uuid import UUID
@@ -55,6 +55,8 @@ class BrainDumpResponse(BaseModel):
 class ParsedTaskSuggestion(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     priority: Literal["low", "medium", "high"] = "medium"
+    due_date: date | None = None
+    time: time_type | None = None
     recurrence_rule: SuggestedRecurrenceRule | None = None
 
     @field_validator("title")

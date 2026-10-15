@@ -19,7 +19,16 @@ export default function RescheduleSheet({ visible, task, onClose, onSave }: Resc
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   function handleSave() {
-    onSave(date, time);
+    const endOfSelectedDay = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
+    onSave(endOfSelectedDay, time);
     onClose();
   }
 
