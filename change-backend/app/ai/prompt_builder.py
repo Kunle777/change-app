@@ -40,6 +40,7 @@ def build_system_prompt(
     local_date: str,
     freshness_note: str = "",
     additional_instructions: str | None = None,
+    extra_context: str = "",
 ) -> str:
     freshness_section = (
         f"\n\n{freshness_note}\n"
@@ -60,7 +61,7 @@ The user's local date is {local_date}. Resolve relative dates such as "tomorrow"
 {freshness_section}{instructions_section}
 Relevant ELVYN data:
 {context}
-"""
+{extra_context}"""
 
 
 async def build_system_prompt_for_user(
@@ -71,6 +72,7 @@ async def build_system_prompt_for_user(
     *,
     timezone_name: str | None = None,
     additional_instructions: str | None = None,
+    extra_context: str = "",
 ) -> tuple[str, DataFreshness]:
     user_timezone = await resolve_user_timezone(db, user_id, timezone_name)
     freshness = await compute_data_freshness(db, user_id, user_timezone.key)
@@ -82,6 +84,7 @@ async def build_system_prompt_for_user(
             local_date,
             freshness.to_prompt_line(),
             additional_instructions,
+            extra_context,
         ),
         freshness,
     )

@@ -15,6 +15,7 @@ from app.ai.schemas import ChatResponse, ConversationDetail, ConversationSummary
 from app.ai.intent_router import detect_intent
 from app.ai.models import AIInteraction, Conversation
 from app.ai import action_service
+from app.memory.retrieval import memory_prompt_section, retrieve_memories, to_sources
 from app.users.models import User
 
 DAILY_LIMIT_FREE = 20  # arbitrary for now — real tiering logic is Phase 8
@@ -391,8 +392,16 @@ async def handle_chat(
         for turn in previous_turns
     ]
 
+    tz = user.last_active_timezone
+    previous_q = previous_turns[-1].question if previous_turns else None
+    memory = await retrieve_memories(
+        db, user_id=user_id, question=message, intent=intent,
+        previous_question=previous_q, tz_name=tz,
+    )
+
     system_prompt, freshness = await build_system_prompt_for_user(
-        db, user_id, intent, context, timezone_name=timezone_name
+        db, user_id, intent, context, timezone_name=timezone_name,
+        extra_context=memory_prompt_section(memory, tz_name=timezone_name),
     )
     generated = gemini.generate_chat_response_with_tools(system_prompt, history, message)
 
@@ -458,4 +467,5 @@ async def handle_chat(
         conversation_id=conversation.id,
         pending_action_id=pending_action_id,
         pending_action_summary=pending_action_summary,
+        memory_sources=to_sources(memory.memories, tz),
     )

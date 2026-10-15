@@ -3,6 +3,7 @@ venv/
 .firebase-credentials.json
 firebase-credentials.json
 node_modules/
+debug.keystore
 
 # Local nested repositories/worktrees are preserved outside the root project tree.
 /.merge-review-worktree/

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,10 @@ import {
   TouchableOpacity,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Alert,
+  Pressable,
   RefreshControl,
   StyleSheet,
 } from 'react-native';
@@ -15,10 +17,11 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import BrainDumpCard from '../components/braindump/BrainDumpCard';
 import DumpDetailSheet from '../components/braindump/DumpDetailSheet';
+import EditDumpSheet from '../components/braindump/EditDumpSheet';
 import ElvynMascot from '../components/ElvynMascot';
 import VoiceCaptureButton from '../components/VoiceCaptureButton';
 
-import { createBrainDump, getRecentDumps } from '../services/braindump';
+import { createBrainDump, deleteBrainDump, getRecentDumps } from '../services/braindump';
 import { BrainDump } from '../types/brainDump';
 
 export default function BrainDumpScreen() {
@@ -30,6 +33,9 @@ export default function BrainDumpScreen() {
 
   const [activeDump, setActiveDump] = useState<BrainDump | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [menuDump, setMenuDump] = useState<BrainDump | null>(null);
+  const [editingDump, setEditingDump] = useState<BrainDump | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadDumps = useCallback(async () => {
     try {
@@ -72,6 +78,47 @@ export default function BrainDumpScreen() {
     setRefreshing(false);
   };
 
+  const handleDelete = async (dump: BrainDump) => {
+    setDeleting(true);
+    try {
+      await deleteBrainDump(dump.id);
+      setDumps((current) => current.filter((item) => item.id !== dump.id));
+      setMenuDump(null);
+      if (activeDump?.id === dump.id) {
+        setSheetVisible(false);
+        setActiveDump(null);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not delete this brain dump.';
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Could not delete brain dump', message);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const confirmDelete = (dump: BrainDump) => {
+    setMenuDump(null);
+    if (Platform.OS === 'web') {
+      if (window.confirm('Delete this brain dump? This will also remove it from AI memory.')) {
+        void handleDelete(dump);
+      }
+      return;
+    }
+
+    Alert.alert(
+      'Delete brain dump?',
+      'This will also remove it from AI memory.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => void handleDelete(dump) },
+      ],
+    );
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -87,7 +134,7 @@ export default function BrainDumpScreen() {
           <View style={styles.inputRow}>
             <ElvynMascot variant="neutral" size={40} />
             <View style={styles.inputFlex}>
-              <Text style={styles.inputLabel}>What's on your mind?</Text>
+              <Text style={styles.inputLabel}>What&apos;s on your mind?</Text>
               <TextInput
                 value={content}
                 onChangeText={(text) => {
@@ -126,6 +173,7 @@ export default function BrainDumpScreen() {
         renderItem={({ item }) => (
           <BrainDumpCard
             dump={item}
+            onMorePress={() => setMenuDump(item)}
             onPress={() => {
               setActiveDump(item);
               setSheetVisible(true);
@@ -143,6 +191,72 @@ export default function BrainDumpScreen() {
         onClose={() => setSheetVisible(false)}
         onConverted={loadDumps}
       />
+
+      <Modal
+        visible={menuDump !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuDump(null)}
+      >
+        <Pressable
+          onPress={() => setMenuDump(null)}
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            paddingHorizontal: 32,
+            backgroundColor: 'rgba(0,0,0,0.35)',
+          }}
+        >
+          <Pressable
+            onPress={(event) => event.stopPropagation()}
+            style={{ backgroundColor: '#fff', borderRadius: 16, padding: 8 }}
+          >
+            <Text style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6, color: '#6B7280' }}>
+              Brain dump options
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => {
+                setEditingDump(menuDump);
+                setMenuDump(null);
+              }}
+              style={{ padding: 14 }}
+            >
+              <Text style={{ color: '#111827', fontSize: 16 }}>Edit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              disabled={deleting}
+              onPress={() => menuDump && confirmDelete(menuDump)}
+              style={{ padding: 14 }}
+            >
+              <Text style={{ color: '#DC2626', fontSize: 16 }}>
+                {deleting ? 'Deleting…' : 'Delete'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => setMenuDump(null)}
+              style={{ padding: 14 }}
+            >
+              <Text style={{ color: '#6B7280', fontSize: 16 }}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {editingDump && (
+        <EditDumpSheet
+          visible
+          dump={editingDump}
+          onClose={() => setEditingDump(null)}
+          onSaved={(updated) => {
+            setDumps((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+            if (activeDump?.id === updated.id) setActiveDump(updated);
+            setEditingDump(null);
+          }}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }

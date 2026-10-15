@@ -2,7 +2,8 @@ import asyncio
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from celery_app import celery_app
-from app.database import AsyncSessionLocal, AsyncSession
+from app.celery_database import celery_db_session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.tasks.models import Task, RecurrenceEnum, TaskEvent, TaskEventOutbox
 from app.tasks.schemas import TaskCreate
 from app.tasks.service import (
@@ -38,7 +39,7 @@ def _send_remote_reminder(task: Task) -> bool:
 
 
 async def _check_reminders_async():
-    async with AsyncSessionLocal() as db:
+    async with celery_db_session() as db:
         due_tasks = await get_due_reminders(db)
         for task in due_tasks:
             local_scheduled = False
@@ -82,7 +83,7 @@ def check_reminders():
 
 
 async def _record_overdue_task_events_async():
-    async with AsyncSessionLocal() as db:
+    async with celery_db_session() as db:
         await record_overdue_events(db)
 
 
@@ -92,7 +93,7 @@ def record_overdue_task_events_job():
 
 
 async def _deliver_task_event_outbox_async():
-    async with AsyncSessionLocal() as db:
+    async with celery_db_session() as db:
         await deliver_task_event_outbox(db)
 
 
@@ -139,7 +140,7 @@ async def _spawn_recurring_async(db: AsyncSession):
 
 
 async def _spawn_recurring_tasks_async():
-    async with AsyncSessionLocal() as db:
+    async with celery_db_session() as db:
         await _spawn_recurring_async(db)
 
 

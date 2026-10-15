@@ -28,6 +28,18 @@ export async function createBrainDump(
   });
 }
 
+export async function updateBrainDump(id: string, content: string): Promise<BrainDump> {
+  return requestJson(`/api/braindump/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+export async function deleteBrainDump(id: string): Promise<void> {
+  await requestJson(`/api/braindump/${id}`, { method: 'DELETE' });
+}
+
 export async function getBrainDumps(): Promise<BrainDump[]> {
   return requestJson('/api/braindump');
 }
