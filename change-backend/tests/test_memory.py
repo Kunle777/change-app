@@ -12,6 +12,7 @@ os.environ.setdefault(
 )
 
 from app.braindump import service as braindump_service
+from app.braindump.schemas import BrainDumpUpdate
 from app.memory import embedding, service
 from app.memory.config import EMBEDDING_DIM
 
@@ -159,3 +160,79 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("source_id = :source_id", delete_query)
         db.delete.assert_awaited_once_with(dump)
         db.commit.assert_awaited_once()
+
+    async def test_updating_brain_dump_commits_before_reindexing(self):
+        user_id = uuid.uuid4()
+        dump_id = uuid.uuid4()
+        dump = SimpleNamespace(id=dump_id, content="old thought")
+        events = []
+        db = SimpleNamespace(
+            execute=AsyncMock(side_effect=lambda *args: events.append("delete_chunks")),
+            commit=AsyncMock(side_effect=lambda: events.append("commit")),
+            refresh=AsyncMock(),
+        )
+        enqueue = Mock(side_effect=lambda **kwargs: events.append("enqueue"))
+
+        with (
+            patch.object(
+                braindump_service,
+                "get_brain_dump_by_id",
+                new=AsyncMock(return_value=dump),
+            ),
+            patch.object(braindump_service, "enqueue_memory_source_index", enqueue),
+        ):
+            updated = await braindump_service.update_brain_dump(
+                db,
+                dump_id,
+                BrainDumpUpdate(content="updated thought"),
+                user_id,
+            )
+
+        self.assertIs(updated, dump)
+        self.assertEqual(dump.content, "updated thought")
+        db.execute.assert_awaited_once()
+        delete_query = str(db.execute.await_args.args[0])
+        self.assertIn("DELETE FROM memory_chunks", delete_query)
+        self.assertEqual(
+            db.execute.await_args.args[1],
+            {
+                "user_id": user_id,
+                "source_type": "brain_dump",
+                "source_id": dump_id,
+            },
+        )
+        db.commit.assert_awaited_once()
+        db.refresh.assert_awaited_once_with(dump)
+        enqueue.assert_called_once_with(
+            source_type="brain_dump",
+            source_id=dump_id,
+            user_id=user_id,
+        )
+        self.assertEqual(events, ["delete_chunks", "commit", "enqueue"])
+
+    async def test_updating_brain_dump_with_same_content_does_not_reindex(self):
+        user_id = uuid.uuid4()
+        dump_id = uuid.uuid4()
+        dump = SimpleNamespace(id=dump_id, content="unchanged thought")
+        db = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock(), refresh=AsyncMock())
+        enqueue = Mock()
+
+        with (
+            patch.object(
+                braindump_service,
+                "get_brain_dump_by_id",
+                new=AsyncMock(return_value=dump),
+            ),
+            patch.object(braindump_service, "enqueue_memory_source_index", enqueue),
+        ):
+            updated = await braindump_service.update_brain_dump(
+                db,
+                dump_id,
+                BrainDumpUpdate(content="unchanged thought"),
+                user_id,
+            )
+
+        self.assertIs(updated, dump)
+        db.commit.assert_not_awaited()
+        db.refresh.assert_not_awaited()
+        enqueue.assert_not_called()

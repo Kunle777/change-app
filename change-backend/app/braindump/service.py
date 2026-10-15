@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import gemini
 from app.ai.prompt_builder import build_system_prompt_for_user
 from app.braindump.models import BrainDump
-from app.braindump.schemas import BrainDumpCreate, ParsedTaskSuggestion, SuggestedRecurrenceRule
+from app.braindump.schemas import (
+    BrainDumpCreate,
+    BrainDumpUpdate,
+    ParsedTaskSuggestion,
+    SuggestedRecurrenceRule,
+)
 from app.memory.service import delete_source_chunks
 from app.memory.tasks import enqueue_memory_source_index
 from app.tasks.models import PriorityEnum, Task, TaskEventType, TaskSeries
@@ -64,6 +69,35 @@ async def delete_brain_dump(db: AsyncSession, brain_dump_id: uuid.UUID, user_id:
     await db.delete(brain_dump)
     await db.commit()
     return brain_dump
+
+
+async def update_brain_dump(
+    db: AsyncSession,
+    brain_dump_id: uuid.UUID,
+    brain_dump: BrainDumpUpdate,
+    user_id: uuid.UUID,
+):
+    existing = await get_brain_dump_by_id(db, brain_dump_id, user_id)
+    if existing is None:
+        return None
+    if existing.content == brain_dump.content:
+        return existing
+
+    await delete_source_chunks(
+        db,
+        source_type="brain_dump",
+        source_id=brain_dump_id,
+        user_id=user_id,
+    )
+    existing.content = brain_dump.content
+    await db.commit()
+    await db.refresh(existing)
+    enqueue_memory_source_index(
+        source_type="brain_dump",
+        source_id=existing.id,
+        user_id=user_id,
+    )
+    return existing
 
 
 PRIORITY_MAP = {

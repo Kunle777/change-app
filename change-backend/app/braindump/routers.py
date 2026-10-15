@@ -8,6 +8,7 @@ from app.users.dependencies import get_current_user
 from app.braindump.schemas import (
     BrainDumpCreate,
     BrainDumpResponse,
+    BrainDumpUpdate,
     ConvertRequest,
     ParseDumpResponse,
 )
@@ -43,6 +44,20 @@ async def delete_dump_route(dump_id: uuid.UUID, db=Depends(get_db), current_user
     if result is None:
         raise HTTPException(status_code=404, detail="Brain dump not found")
     return {"message": "Deleted successfully"}
+
+@router.patch("/{dump_id}", response_model=BrainDumpResponse)
+async def update_dump_route(
+    dump_id: uuid.UUID,
+    data: BrainDumpUpdate,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    dump = await service.update_brain_dump(db, dump_id, data, current_user.id)
+    if dump is None:
+        raise HTTPException(status_code=404, detail="Brain dump not found")
+    response = BrainDumpResponse.model_validate(dump)
+    response.possible_task = looks_like_possible_task(dump.content)
+    return response
 
 @router.post("/{dump_id}/parse", response_model=ParseDumpResponse)
 async def parse_dump_route(dump_id: uuid.UUID, db=Depends(get_db), current_user=Depends(get_current_user)):
