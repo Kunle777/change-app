@@ -35,7 +35,7 @@ class ConversationTurn(BaseModel):
     question: str
     response: str
     intent: str | None
-    created_at: datetime
+    created_at: datetime | None
     pending_action_id: UUID | None = None
 
 

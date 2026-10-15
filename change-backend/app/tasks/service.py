@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
+from app.ai.prompt_builder import build_system_prompt_for_user
 from app.tasks.models import (
     Task,
     StatusEnum,
@@ -412,15 +413,22 @@ async def breakdown_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUI
     if task is  None:
         raise ValueError("Task not found ")
 
-
-    prompt = (
-        f"Break the following task into 3-6 small, concrete, actionable steps. "
+    context = (
         f"Task title: {task.title}\n"
-        f"Task description: {task.description or 'No description provided'}\n"
-        f"Respond with ONLY a JSON array of strings, each string one step. "
-        f"No extra text, no markdown formatting."
+        f"Task description: {task.description or 'No description provided'}"
     )
-   
+    prompt, _ = await build_system_prompt_for_user(
+        db,
+        user_id,
+        "task_help",
+        context,
+        additional_instructions=(
+            "Break the supplied task into 3-6 small, concrete, actionable steps. "
+            "Respond with only a JSON array of strings, each string one step. "
+            "Do not include extra text or markdown formatting."
+        ),
+    )
+
     steps = gemini.generate_structured(prompt)
     return steps
 

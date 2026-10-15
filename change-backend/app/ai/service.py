@@ -1,20 +1,19 @@
+import asyncio
 import json
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.checkins import service as checkin_service
 from app.ai.models import AIUsageLog
 from app.ai import gemini
-from app.ai.freshness_service import compute_data_freshness
-from app.ai.prompt_builder import build_prompt, build_system_prompt
+from app.ai.prompt_builder import build_prompt, build_system_prompt_for_user
+from app.ai.freshness_service import resolve_user_timezone
 from app.ai.context_builder import build_context
 from app.ai.schemas import ChatResponse, ConversationDetail, ConversationSummary, ConversationTurn
 from app.ai.intent_router import detect_intent
 from app.ai.models import AIInteraction, Conversation
-from app.ai.gemini import generate_structured
 from app.ai import action_service
 from app.users.models import User
 
@@ -68,13 +67,18 @@ async def generate_evening_summary(db: AsyncSession, user_id: UUID) -> str:
 
     checkin_text = "\n".join(summary_lines)
 
-    prompt = (
-    "Here is a user's check-in history from the last 7 days:\n\n"
-    f"{checkin_text}\n\n"
-    "Write a short, honest, encouraging 3-4 sentence summary noticing any "
-    "patterns in mood or recurring themes. Do not invent details not present above.")
-
-    return gemini.generate_response(prompt)
+    system_prompt, _ = await build_system_prompt_for_user(
+        db,
+        user_id,
+        "daily_review",
+        checkin_text,
+        additional_instructions=(
+            "Write a short, honest, encouraging 3-4 sentence summary noticing any "
+            "patterns in mood or recurring themes. Do not invent details not present "
+            "in the supplied check-in history."
+        ),
+    )
+    return await asyncio.to_thread(gemini.generate_response, system_prompt)
 
 
 
@@ -112,12 +116,22 @@ async def _handle_chat_legacy(db: AsyncSession, user_id, message: str) -> ChatRe
 
     intent = detect_intent(message)
     context = await build_context(db, user_id, intent)
-    prompt = build_prompt(intent, context, message)
+    system_prompt, freshness = await build_system_prompt_for_user(
+        db,
+        user_id,
+        intent,
+        context,
+        additional_instructions=(
+            "Return only a valid JSON object with string fields 'intent' and 'message' "
+            "and a 'suggested_actions' array."
+        ),
+    )
+    prompt = build_prompt(system_prompt, message)
 
-    raw = await generate_structured(prompt)  # existing Gemini JSON-mode wrapper
+    raw = await asyncio.to_thread(gemini.generate_response, prompt)
 
     try:
-        parsed = json.loads(raw) if isinstance(raw, str) else raw
+        parsed = json.loads(raw)
         response = ChatResponse(
             intent=parsed.get("intent", intent),
             message=parsed.get("message", "Sorry, I couldn't process that."),
@@ -138,6 +152,7 @@ async def _handle_chat_legacy(db: AsyncSession, user_id, message: str) -> ChatRe
             response=response.message,
             context_used=context,
             context_size=len(context),
+            context_richness=freshness.tier.value,
             status="success",
         )
     )
@@ -222,10 +237,7 @@ async def get_or_create_active_conversation(
     timezone_name: str | None = None,
 ) -> Conversation:
     now = datetime.now(timezone.utc)
-    try:
-        user_timezone = ZoneInfo(timezone_name or "Africa/Lagos")
-    except Exception:
-        user_timezone = ZoneInfo("Africa/Lagos")
+    user_timezone = await resolve_user_timezone(db, user_id, timezone_name)
     result = await db.execute(
         select(Conversation)
         .where(Conversation.user_id == user_id)
@@ -293,11 +305,22 @@ async def _handle_chat_without_tools(
     intent = detect_intent(message)
     context = await build_context(db, user_id, intent)
     history = await _recent_conversation_history(db, user_id, conversation.id)
-    prompt = build_prompt(intent, context, message, history)
-    raw = await generate_structured(prompt)
+    system_prompt, freshness = await build_system_prompt_for_user(
+        db,
+        user_id,
+        intent,
+        context,
+        timezone_name=timezone_name,
+        additional_instructions=(
+            "Return only a valid JSON object with string fields 'intent' and 'message' "
+            "and a 'suggested_actions' array."
+        ),
+    )
+    prompt = build_prompt(system_prompt, message, history)
+    raw = await asyncio.to_thread(gemini.generate_response, prompt)
 
     try:
-        parsed = json.loads(raw) if isinstance(raw, str) else raw
+        parsed = json.loads(raw)
         response = ChatResponse(
             intent=parsed.get("intent", intent),
             message=parsed.get("message", "Sorry, I couldn't process that."),
@@ -322,6 +345,7 @@ async def _handle_chat_without_tools(
             response=response.message,
             context_used=context,
             context_size=len(context),
+            context_richness=freshness.tier.value,
             status="success",
         )
     )
@@ -367,13 +391,9 @@ async def handle_chat(
         for turn in previous_turns
     ]
 
-    try:
-        user_zone = ZoneInfo(timezone_name or "Africa/Lagos")
-    except Exception:
-        user_zone = ZoneInfo("Africa/Lagos")
-    local_date = datetime.now(user_zone).date().isoformat()
-    freshness = await compute_data_freshness(db, user_id, timezone_name)
-    system_prompt = build_system_prompt(intent, context, local_date, freshness.to_prompt_line())
+    system_prompt, freshness = await build_system_prompt_for_user(
+        db, user_id, intent, context, timezone_name=timezone_name
+    )
     generated = gemini.generate_chat_response_with_tools(system_prompt, history, message)
 
     pending_action_id = None
@@ -392,7 +412,7 @@ async def handle_chat(
             arguments=arguments,
         )
         if outcome.get("status") == "awaiting_confirmation":
-            pending_action_id = uuid.UUID(outcome["pending_action_id"])
+            pending_action_id = UUID(outcome["pending_action_id"])
             pending_action_summary = outcome["summary"]
             try:
                 gemini.send_tool_result(generated["chat"], tool_name, outcome)

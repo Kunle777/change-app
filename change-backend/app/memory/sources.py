@@ -53,31 +53,34 @@ async def load_source(
     source_type: str,
     source_id: uuid.UUID,
     user_id: uuid.UUID,
-) -> tuple[list[str], datetime] | None:
+    for_update: bool = False,
+) -> tuple[list[str], datetime, datetime] | None:
     """Load only the user's original text, never model-generated summaries."""
     if source_type == "brain_dump":
-        row = (
-            await db.execute(
-                select(BrainDump).where(
-                    BrainDump.id == source_id,
-                    BrainDump.user_id == user_id,
-                )
+        statement = select(BrainDump).where(
+            BrainDump.id == source_id,
+            BrainDump.user_id == user_id,
+        )
+        if for_update:
+            statement = statement.with_for_update().execution_options(
+                populate_existing=True
             )
-        ).scalar_one_or_none()
+        row = (await db.execute(statement)).scalar_one_or_none()
         if row is None:
             return None
         texts = chunk_text(row.content)
-        return texts, _aware(row.created_at)
+        return texts, _aware(row.created_at), _aware(row.updated_at)
 
     if source_type == "check_in":
-        row = (
-            await db.execute(
-                select(CheckIn).where(
-                    CheckIn.id == source_id,
-                    CheckIn.user_id == user_id,
-                )
+        statement = select(CheckIn).where(
+            CheckIn.id == source_id,
+            CheckIn.user_id == user_id,
+        )
+        if for_update:
+            statement = statement.with_for_update().execution_options(
+                populate_existing=True
             )
-        ).scalar_one_or_none()
+        row = (await db.execute(statement)).scalar_one_or_none()
         if row is None:
             return None
         texts = check_in_texts(
@@ -87,6 +90,6 @@ async def load_source(
             goal_status=row.goal_status,
             reflection=row.reflection,
         )
-        return texts, _aware(row.created_at)
+        return texts, _aware(row.created_at), _aware(row.updated_at)
 
     raise ValueError(f"Unknown memory source type: {source_type}")

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,7 @@ from app.ai.schemas import (
 from app.ai import service
 from app.ai import action_service
 from app.ai import gemini
+from app.ai.prompt_builder import build_system_prompt_for_user
 from app.checkins import service as checkin_service
 
 
@@ -107,11 +109,21 @@ async def evening_summary_route(
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily AI limit reached")
 
     status_data = await checkin_service.get_todays_checkin_status(db, current_user)
-    prompt = (
-        f"The user completed their evening check-in. "
-        f"Morning done: {status_data['morning_done']}, Evening done: {status_data['evening_done']}. "
-        f"Give a short, warm, encouraging end-of-day summary in 2-3 sentences."
+    context = (
+        f"Today's check-in status: morning done={status_data['morning_done']}; "
+        f"evening done={status_data['evening_done']}."
     )
-    summary = gemini.generate_response(prompt)
+    system_prompt, _ = await build_system_prompt_for_user(
+        db,
+        current_user.id,
+        "daily_review",
+        context,
+        timezone_name=current_user.last_active_timezone,
+        additional_instructions=(
+            "Give a short, warm, encouraging end-of-day summary in 2-3 sentences. "
+            "Use only the supplied check-in status and recent activity."
+        ),
+    )
+    summary = await asyncio.to_thread(gemini.generate_response, system_prompt)
     await service.increment_usage(db, current_user.id)
     return ChatResponse(intent="general_coaching", message=summary, suggested_actions=[])

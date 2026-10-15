@@ -16,6 +16,21 @@ from app.memory.sources import check_in_texts, load_source
 
 
 class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
+    def test_memory_celery_jobs_are_registered_and_scheduled(self):
+        from celery_app import celery_app
+        from app.memory.tasks import index_memory_source_job, sweep_memory_index_job
+
+        self.assertIsNotNone(
+            celery_app.tasks.get(index_memory_source_job.name)
+        )
+        self.assertIsNotNone(
+            celery_app.tasks.get(sweep_memory_index_job.name)
+        )
+        self.assertEqual(
+            celery_app.conf.beat_schedule["sweep-memory-index"]["task"],
+            "app.memory.tasks.sweep_memory_index_job",
+        )
+
     def test_checkin_text_uses_user_fields_and_mood_label(self):
         text = check_in_texts(
             kind="evening",
@@ -47,7 +62,12 @@ class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_load_source_returns_empty_text_for_existing_empty_dump(self):
         created_at = datetime.now(timezone.utc)
-        dump = SimpleNamespace(content=" \n ", created_at=created_at)
+        updated_at = created_at
+        dump = SimpleNamespace(
+            content=" \n ",
+            created_at=created_at,
+            updated_at=updated_at,
+        )
         db = SimpleNamespace(
             execute=AsyncMock(
                 return_value=SimpleNamespace(
@@ -63,13 +83,14 @@ class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
             user_id=uuid.uuid4(),
         )
 
-        self.assertEqual(loaded, ([], created_at))
+        self.assertEqual(loaded, ([], created_at, updated_at))
 
     async def test_missing_ai_entitlement_disables_embedding(self):
         db = SimpleNamespace(
-            execute=AsyncMock(
-                return_value=SimpleNamespace(first=Mock(return_value=None))
-            ),
+            execute=AsyncMock(side_effect=[
+                SimpleNamespace(first=Mock(return_value=None), rowcount=0),
+                SimpleNamespace(rowcount=0),
+            ]),
             commit=AsyncMock(),
         )
         self.assertFalse(await indexer.ai_allowed(db, uuid.uuid4()))
@@ -86,7 +107,10 @@ class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
     async def test_indexing_skips_all_external_calls_without_ai_entitlement(self):
         db = SimpleNamespace(
             execute=AsyncMock(
-                return_value=SimpleNamespace(first=Mock(return_value=None))
+                return_value=SimpleNamespace(
+                    first=Mock(return_value=None),
+                    rowcount=0,
+                )
             ),
             commit=AsyncMock(),
         )
@@ -103,18 +127,19 @@ class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(count, 0)
         load_source_mock.assert_not_awaited()
         embed_mock.assert_not_awaited()
-        db.commit.assert_not_awaited()
+        db.commit.assert_awaited_once()
 
     async def test_indexing_embeds_and_upserts_new_source_chunks(self):
         source_id = uuid.uuid4()
         user_id = uuid.uuid4()
         source_created_at = datetime.now(timezone.utc)
+        source_updated_at = source_created_at
         db = SimpleNamespace(
             execute=AsyncMock(
                 side_effect=[
                     SimpleNamespace(first=Mock(return_value=(True,))),
                     SimpleNamespace(all=Mock(return_value=[])),
-                    SimpleNamespace(rowcount=1),
+                    SimpleNamespace(rowcount=0),
                     SimpleNamespace(rowcount=1),
                 ]
             ),
@@ -124,7 +149,17 @@ class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             indexer,
             "load_source",
-            new=AsyncMock(return_value=(["original user text"], source_created_at)),
+            new=AsyncMock(
+                return_value=(
+                    ["original user text"],
+                    source_created_at,
+                    source_updated_at,
+                )
+            ),
+        ), patch.object(
+            indexer,
+            "_lock_ai_allowed",
+            new=AsyncMock(return_value=True),
         ), patch.object(
             indexer,
             "embed_texts",

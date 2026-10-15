@@ -55,13 +55,13 @@ function mapConversationMessages(
       id: `${turn.id}-user`,
       role: 'user' as const,
       text: turn.question,
-      timestamp: new Date(turn.created_at).toLocaleTimeString(),
+      timestamp: turn.created_at ? new Date(turn.created_at).toLocaleTimeString() : '',
     },
     {
       id: `${turn.id}-ai`,
       role: 'ai' as const,
       text: turn.response,
-      timestamp: new Date(turn.created_at).toLocaleTimeString(),
+      timestamp: turn.created_at ? new Date(turn.created_at).toLocaleTimeString() : '',
       pendingActionId: turn.pending_action_id ?? undefined,
       pendingActionSummary: turn.pending_action_id
         ? pendingById.get(turn.pending_action_id)?.summary

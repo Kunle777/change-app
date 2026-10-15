@@ -34,6 +34,27 @@ async def ai_allowed(db: AsyncSession, user_id: uuid.UUID) -> bool:
     return bool(row[0]) if row is not None else False
 
 
+async def _lock_ai_allowed(db: AsyncSession, user_id: uuid.UUID) -> bool:
+    row = (
+        await db.execute(
+            text(
+                "SELECT ai_enabled FROM feature_entitlements "
+                "WHERE user_id = :user_id FOR SHARE"
+            ),
+            {"user_id": user_id},
+        )
+    ).first()
+    return bool(row[0]) if row is not None else False
+
+
+async def _delete_user_chunks(db: AsyncSession, user_id: uuid.UUID) -> int:
+    result = await db.execute(
+        text("DELETE FROM memory_chunks WHERE user_id = :user_id"),
+        {"user_id": user_id},
+    )
+    return result.rowcount or 0
+
+
 async def index_source(
     db: AsyncSession,
     *,
@@ -45,6 +66,8 @@ async def index_source(
         logger.info(
             "Memory indexing skipped because AI is disabled or no entitlement exists"
         )
+        await _delete_user_chunks(db, user_id)
+        await db.commit()
         return 0
 
     loaded = await load_source(
@@ -55,7 +78,7 @@ async def index_source(
     )
     if loaded is None:
         return 0
-    contents, source_created_at = loaded
+    contents, source_created_at, _ = loaded
     if not contents:
         await delete_source_chunks(
             db,
@@ -97,6 +120,29 @@ async def index_source(
         )
         if len(vectors) != len(to_embed):
             raise ValueError("Embedding response count did not match pending memory chunks")
+
+        if not await _lock_ai_allowed(db, user_id):
+            await _delete_user_chunks(db, user_id)
+            await db.commit()
+            return 0
+
+        current = await load_source(
+            db,
+            source_type=source_type,
+            source_id=source_id,
+            user_id=user_id,
+            for_update=True,
+        )
+        if current is None or current != loaded:
+            await delete_source_chunks(
+                db,
+                source_type=source_type,
+                source_id=source_id,
+                user_id=user_id,
+            )
+            await db.commit()
+            return 0
+
         for (chunk_index, content), vector in zip(to_embed, vectors):
             await upsert_chunk(
                 db,
@@ -159,6 +205,24 @@ async def delete_orphans(db: AsyncSession) -> int:
     return result.rowcount or 0
 
 
+async def delete_disabled_chunks(db: AsyncSession) -> int:
+    result = await db.execute(
+        text(
+            """
+            DELETE FROM memory_chunks mc
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM feature_entitlements fe
+                WHERE fe.user_id = mc.user_id
+                  AND fe.ai_enabled IS TRUE
+            )
+            """
+        )
+    )
+    await db.commit()
+    return result.rowcount or 0
+
+
 async def reembed_stale_model_chunks(
     db: AsyncSession,
     *,
@@ -211,13 +275,14 @@ async def sweep_memory_index(
     if limit < 1:
         raise ValueError("limit must be positive")
 
-    stats = {"orphans_deleted": await delete_orphans(db), "indexed": 0, "failed": 0, "reembedded": 0}
+    stats = {
+        "orphans_deleted": await delete_orphans(db),
+        "disabled_deleted": await delete_disabled_chunks(db),
+        "indexed": 0,
+        "failed": 0,
+        "reembedded": 0,
+    }
 
-    dump_updated = (
-        BrainDump.updated_at
-        if hasattr(BrainDump, "updated_at")
-        else BrainDump.created_at
-    )
     first_dump = and_(
         MemoryChunk.source_type == "brain_dump",
         MemoryChunk.source_id == BrainDump.id,
@@ -230,11 +295,14 @@ async def sweep_memory_index(
             .select_from(BrainDump)
             .outerjoin(MemoryChunk, first_dump)
             .where(
-                func.length(func.trim(BrainDump.content)) > 0,
+                or_(
+                    func.length(func.trim(BrainDump.content)) > 0,
+                    MemoryChunk.id.is_not(None),
+                ),
                 _ai_enabled_for(BrainDump.__tablename__),
                 or_(
                     MemoryChunk.id.is_(None),
-                    dump_updated > MemoryChunk.created_at,
+                    BrainDump.updated_at > MemoryChunk.created_at,
                     MemoryChunk.created_at
                     < text("now() - interval '15 minutes'"),
                 ),
@@ -260,10 +328,11 @@ async def sweep_memory_index(
             .select_from(CheckIn)
             .outerjoin(MemoryChunk, first_check_in)
             .where(
-                has_check_in_text,
+                or_(has_check_in_text, MemoryChunk.id.is_not(None)),
                 _ai_enabled_for(CheckIn.__tablename__),
                 or_(
                     MemoryChunk.id.is_(None),
+                    CheckIn.updated_at > MemoryChunk.created_at,
                     MemoryChunk.created_at
                     < text("now() - interval '15 minutes'"),
                 ),

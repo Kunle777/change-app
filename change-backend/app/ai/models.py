@@ -77,17 +77,17 @@ class AIInteraction(Base):
     response: Mapped[str] = mapped_column(Text, nullable=False)
     context_used: Mapped[str | None] = mapped_column(Text, nullable=True)
     context_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    tool_used: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="false", default=False
+    tool_used: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, server_default="false", default=False
     )
     tool_name: Mapped[str | None] = mapped_column(String, nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     was_helpful: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     context_richness: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    status: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="success", default="success"
+    status: Mapped[str | None] = mapped_column(
+        String, nullable=True, server_default="success", default="success"
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, server_default=text("now()")
     )

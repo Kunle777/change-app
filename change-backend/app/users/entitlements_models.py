@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -11,6 +11,7 @@ class FeatureEntitlements(Base):
     __tablename__ = "feature_entitlements"
     __table_args__ = (
         UniqueConstraint("user_id", name="uq_feature_entitlements_user_id"),
+        Index("ix_feature_entitlements_user_id", "user_id", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

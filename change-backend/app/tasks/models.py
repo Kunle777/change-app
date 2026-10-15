@@ -103,6 +103,7 @@ class Task(Base):
 class TaskEvent(Base):
     __tablename__ = "task_events"
     __table_args__ = (
+        Index("ix_task_events_user_occurred_at", "user_id", "occurred_at"),
         Index(
             "uq_task_events_overdue_deadline",
             "task_id",

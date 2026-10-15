@@ -9,6 +9,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import gemini
+from app.ai.prompt_builder import build_system_prompt_for_user
 from app.braindump.models import BrainDump
 from app.braindump.schemas import BrainDumpCreate, ParsedTaskSuggestion, SuggestedRecurrenceRule
 from app.memory.service import delete_source_chunks
@@ -77,14 +78,20 @@ async def parse_dump(db: AsyncSession, dump_id: uuid.UUID, user_id: uuid.UUID):
     if not dump:
         return None
 
-    prompt = (
-        "Extract distinct actionable tasks from the note. Return a JSON array; each item "
-        'must contain "title" (short, action-oriented) and "priority" '
-        '(low, medium, or high). Include "recurrence_rule" only when the note clearly '
-        'requests repetition; it must contain frequency (daily, weekly, or monthly), '
-        'interval, and optional days_of_week using Monday=0 through Sunday=6. Do not '
-        'include reminder times, due dates, or an inferred start date. Return [] if '
-        "there are no actionable tasks. Do not invent tasks.\n\nNote:\n" + dump.content
+    prompt, _ = await build_system_prompt_for_user(
+        db,
+        user_id,
+        "task_planning",
+        f"Brain Dump note:\n{dump.content}",
+        additional_instructions=(
+            "Extract distinct actionable tasks from the supplied note and return a JSON "
+            "array. Each item must contain 'title' (short, action-oriented) and 'priority' "
+            "('low', 'medium', or 'high'). Include 'recurrence_rule' only when the note "
+            "clearly requests repetition; it must contain frequency ('daily', 'weekly', "
+            "or 'monthly'), interval, and optional days_of_week using Monday=0 through "
+            "Sunday=6. Do not include reminder times, due dates, or an inferred start "
+            "date. Return [] if there are no actionable tasks. Do not invent tasks."
+        ),
     )
     try:
         raw = await asyncio.to_thread(gemini.generate_response, prompt)

@@ -7,7 +7,7 @@ export type ChatConversationTurn = {
   question: string;
   response: string;
   intent: string | null;
-  created_at: string;
+  created_at: string | null;
   pending_action_id: string | null;
 };
 export type ChatConversationDetail = ChatConversation & { messages: ChatConversationTurn[] };
