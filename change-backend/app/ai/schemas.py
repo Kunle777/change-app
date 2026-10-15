@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
     message: str
@@ -15,6 +15,13 @@ class SuggestedAction(BaseModel):
     screen: str | None = None
 
 
+class MemorySource(BaseModel):
+    id: str
+    kind: str
+    date: str
+    snippet: str
+
+
 class ChatResponse(BaseModel):
     intent: str
     message: str
@@ -22,6 +29,7 @@ class ChatResponse(BaseModel):
     conversation_id: UUID | None = None
     pending_action_id: UUID | None = None
     pending_action_summary: str | None = None
+    memory_sources: list[MemorySource] = Field(default_factory=list)
 
 
 class ConversationSummary(BaseModel):

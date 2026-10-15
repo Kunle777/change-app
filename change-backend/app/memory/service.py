@@ -113,46 +113,46 @@ async def delete_source_chunks(
     )
 
 
-async def search_chunks(
+async def search_by_vector(
     db: AsyncSession,
     *,
     user_id: uuid.UUID,
-    query: str,
+    vector: list[float],
     k: int = 5,
     source_types: Iterable[str] | None = None,
     since: datetime | None = None,
-) -> list[dict[str, object]]:
+    until: datetime | None = None,
+) -> list[dict]:
     if not 1 <= k <= 100:
         raise ValueError("k must be between 1 and 100")
-
-    [query_vector] = await embed_texts([query], task_type="RETRIEVAL_QUERY")
-    clauses = [
-        "user_id = :user_id",
-        "embedding_model = :model",
-        "EXISTS (SELECT 1 FROM feature_entitlements fe "
-        "WHERE fe.user_id = memory_chunks.user_id AND fe.ai_enabled IS TRUE)",
-    ]
-    params: dict[str, object] = {
-        "user_id": user_id,
-        "model": EMBEDDING_MODEL,
-        "query_vector": to_pgvector(query_vector),
-        "k": k,
-    }
-    selected_sources = list(source_types or ())
-    if selected_sources:
-        clauses.append("source_type = ANY(CAST(:source_types AS text[]))")
-        params["source_types"] = selected_sources
-    if since is not None:
+    clauses = ["user_id = :user_id", "embedding_model = :model"]
+    params: dict = {"user_id": user_id, "model": EMBEDDING_MODEL,
+                    "q": to_pgvector(vector), "k": k}
+    if source_types:
+        clauses.append("source_type = ANY(:source_types)")
+        params["source_types"] = list(source_types)
+    if since:
         clauses.append("source_created_at >= :since")
         params["since"] = since
-
-    statement = text(f"""
+    if until:
+        clauses.append("source_created_at < :until")
+        params["until"] = until
+    sql = text(f"""
         SELECT id, source_type, source_id, chunk_index, content, source_created_at,
-               1 - (embedding <=> CAST(CAST(:query_vector AS text) AS vector)) AS similarity
+               1 - (embedding <=> CAST(CAST(:q AS text) AS vector)) AS similarity
         FROM memory_chunks
         WHERE {" AND ".join(clauses)}
-        ORDER BY embedding <=> CAST(CAST(:query_vector AS text) AS vector)
+        ORDER BY embedding <=> CAST(CAST(:q AS text) AS vector)
         LIMIT :k
     """)
-    rows = (await db.execute(statement, params)).mappings().all()
-    return [dict(row) for row in rows]
+    rows = (await db.execute(sql, params)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def search_chunks(db: AsyncSession, *, user_id: uuid.UUID, query: str,
+                        k: int = 5, source_types: Iterable[str] | None = None,
+                        since: datetime | None = None,
+                        until: datetime | None = None) -> list[dict]:
+    [qvec] = await embed_texts([query], task_type="RETRIEVAL_QUERY")
+    return await search_by_vector(db, user_id=user_id, vector=qvec, k=k,
+                                  source_types=source_types, since=since, until=until)

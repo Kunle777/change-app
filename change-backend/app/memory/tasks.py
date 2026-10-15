@@ -4,7 +4,7 @@ import uuid
 
 from celery_app import celery_app
 
-from app.database import AsyncSessionLocal
+from app.celery_database import celery_db_session
 from app.memory.indexer import index_source, sweep_memory_index
 
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _index_source_async(source_type: str, source_id: str, user_id: str) -> int:
-    async with AsyncSessionLocal() as db:
+    async with celery_db_session() as db:
         return await index_source(
             db,
             source_type=source_type,
@@ -27,7 +27,7 @@ def index_memory_source_job(source_type: str, source_id: str, user_id: str) -> i
 
 
 async def _sweep_memory_index_async() -> dict[str, int]:
-    async with AsyncSessionLocal() as db:
+    async with celery_db_session() as db:
         return await sweep_memory_index(db)
 
 
