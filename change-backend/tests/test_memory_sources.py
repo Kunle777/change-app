@@ -98,7 +98,7 @@ class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
     async def test_false_ai_entitlement_disables_embedding(self):
         db = SimpleNamespace(
             execute=AsyncMock(
-                return_value=SimpleNamespace(first=Mock(return_value=(False,)))
+                return_value=SimpleNamespace(first=Mock(return_value=(True, False)))
             )
         )
         user_id = uuid.uuid4()
@@ -137,7 +137,7 @@ class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
         db = SimpleNamespace(
             execute=AsyncMock(
                 side_effect=[
-                    SimpleNamespace(first=Mock(return_value=(True,))),
+                    SimpleNamespace(first=Mock(return_value=(True, True))),
                     SimpleNamespace(all=Mock(return_value=[])),
                     SimpleNamespace(rowcount=0),
                     SimpleNamespace(rowcount=1),

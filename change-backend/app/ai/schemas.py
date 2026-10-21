@@ -17,6 +17,7 @@ class SuggestedAction(BaseModel):
 
 class MemorySource(BaseModel):
     id: str
+    source_type: str
     kind: str
     date: str
     snippet: str

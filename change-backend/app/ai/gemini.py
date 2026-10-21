@@ -117,7 +117,9 @@ def generate_structured(prompt: str) -> list[str]:
     return steps
 
 
-def generate_chat_response_with_tools(system_prompt: str, history, new_message: str) -> dict:
+def generate_chat_response_with_tools(
+    system_prompt: str, history, new_message: str, *, allow_tools: bool = True
+) -> dict:
     """Return one model response and at most one manually handled tool call."""
     gemini_history = []
     for turn in history:
@@ -133,13 +135,13 @@ def generate_chat_response_with_tools(system_prompt: str, history, new_message: 
                 ),
             )
         )
+    config_kwargs = {"system_instruction": system_prompt}
+    if allow_tools:
+        config_kwargs["tools"] = [TASK_TOOLS]
     chat = get_client().chats.create(
         model=os.environ["GEMINI_MODEL"],
         history=gemini_history,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            tools=[TASK_TOOLS],
-        ),
+        config=types.GenerateContentConfig(**config_kwargs),
     )
     response = chat.send_message(new_message)
     function_calls = response.function_calls or []

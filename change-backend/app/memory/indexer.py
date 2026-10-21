@@ -9,6 +9,7 @@ from app.checkins.models import CheckIn
 from app.memory.config import EMBEDDING_DIM, EMBEDDING_MODEL
 from app.memory.embedding import embed_texts
 from app.memory.models import MemoryChunk
+from app.memory.policy import memory_access
 from app.memory.service import (
     content_hash,
     delete_source_chunks,
@@ -22,29 +23,21 @@ logger = logging.getLogger(__name__)
 
 
 async def ai_allowed(db: AsyncSession, user_id: uuid.UUID) -> bool:
-    row = (
-        await db.execute(
-            text(
-                "SELECT ai_enabled FROM feature_entitlements "
-                "WHERE user_id = :user_id"
-            ),
-            {"user_id": user_id},
-        )
-    ).first()
-    return bool(row[0]) if row is not None else False
+    return (await memory_access(db, user_id)).allowed
 
 
 async def _lock_ai_allowed(db: AsyncSession, user_id: uuid.UUID) -> bool:
     row = (
         await db.execute(
             text(
-                "SELECT ai_enabled FROM feature_entitlements "
-                "WHERE user_id = :user_id FOR SHARE"
+                "SELECT u.personal_memory_enabled, fe.ai_enabled FROM users u "
+                "LEFT JOIN feature_entitlements fe ON fe.user_id = u.id "
+                "WHERE u.id = :user_id FOR SHARE"
             ),
             {"user_id": user_id},
         )
     ).first()
-    return bool(row[0]) if row is not None else False
+    return bool(row and row[0] and row[1] is not False)
 
 
 async def _delete_user_chunks(db: AsyncSession, user_id: uuid.UUID) -> int:
@@ -184,8 +177,9 @@ def _ai_enabled_for(table_name: str):
     if table_name not in {BrainDump.__tablename__, CheckIn.__tablename__}:
         raise ValueError("Unsupported memory source table")
     return text(
-        "EXISTS (SELECT 1 FROM feature_entitlements fe "
-        f"WHERE fe.user_id = {table_name}.user_id AND fe.ai_enabled IS TRUE)"
+        "EXISTS (SELECT 1 FROM users u LEFT JOIN feature_entitlements fe ON fe.user_id = u.id "
+        f"WHERE u.id = {table_name}.user_id AND u.personal_memory_enabled IS TRUE "
+        "AND COALESCE(fe.ai_enabled, TRUE) IS TRUE)"
     )
 
 
@@ -205,16 +199,15 @@ async def delete_orphans(db: AsyncSession) -> int:
     return result.rowcount or 0
 
 
-async def delete_disabled_chunks(db: AsyncSession) -> int:
+async def delete_chunks_without_permission(db: AsyncSession) -> int:
     result = await db.execute(
         text(
             """
             DELETE FROM memory_chunks mc
             WHERE NOT EXISTS (
-                SELECT 1
-                FROM feature_entitlements fe
-                WHERE fe.user_id = mc.user_id
-                  AND fe.ai_enabled IS TRUE
+                SELECT 1 FROM users u LEFT JOIN feature_entitlements fe ON fe.user_id = u.id
+                WHERE u.id = mc.user_id AND u.personal_memory_enabled IS TRUE
+                  AND COALESCE(fe.ai_enabled, TRUE) IS TRUE
             )
             """
         )
@@ -276,8 +269,8 @@ async def sweep_memory_index(
         raise ValueError("limit must be positive")
 
     stats = {
+        "unpermitted_deleted": await delete_chunks_without_permission(db),
         "orphans_deleted": await delete_orphans(db),
-        "disabled_deleted": await delete_disabled_chunks(db),
         "indexed": 0,
         "failed": 0,
         "reembedded": 0,
