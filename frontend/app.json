@@ -57,7 +57,8 @@
       ],
       "expo-secure-store",
       "expo-web-browser",
-      "expo-localization"
+      "expo-localization",
+      "expo-status-bar"
     ],
     "experiments": {
       "reactCompiler": true

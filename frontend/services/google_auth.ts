@@ -24,9 +24,7 @@ export async function signInWithGoogle() {
 
   const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
 
-  if (result.type !== 'success' || !result.url) {
-    throw new Error('Google sign-in was cancelled');
-  }
+  if (result.type !== 'success' || !result.url) return null;
 
   return await finishGoogleSignIn(result.url);
 }
