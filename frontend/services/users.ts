@@ -1,18 +1,10 @@
-import { supabase } from './supabase';
+import { getAuthHeader } from './supabase';
 import { API_BASE_URL } from './api';
-
-async function authHeader() {
-  const { data } = await supabase.auth.getSession();
-  return { Authorization: `Bearer ${data.session?.access_token}` };
-}
 
 export async function updateCountry(countryCode: string) {
   const res = await fetch(`${API_BASE_URL}/api/users/country`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(await authHeader()),
-    },
+    headers: await getAuthHeader(),
     body: JSON.stringify({ country_code: countryCode }),
   });
   if (!res.ok) throw new Error('Failed to update country');
@@ -21,7 +13,7 @@ export async function updateCountry(countryCode: string) {
 
 export async function getEntitlements() {
   const res = await fetch(`${API_BASE_URL}/api/users/entitlements`, {
-    headers: await authHeader(),
+    headers: await getAuthHeader(),
   });
   if (!res.ok) throw new Error('Failed to fetch entitlements');
   return res.json();
@@ -29,7 +21,7 @@ export async function getEntitlements() {
 
 export async function getMyProfile() {
   const res = await fetch(`${API_BASE_URL}/api/users/me`, {
-    headers: await authHeader(),
+    headers: await getAuthHeader(),
   });
   if (!res.ok) throw new Error('Failed to fetch profile');
   return res.json();
