@@ -11,6 +11,10 @@ export const lightColors = {
   accent: '#F59E0B',
   success: '#10B981',
   danger: '#EF4444',
+  heroBg: '#1A1636',
+  primarySoft: '#EEF0FF',
+  warmSurface: '#FFF7ED',
+  warmBorder: '#E5C99B',
 } as const;
 
 export const darkColors = {
@@ -24,6 +28,10 @@ export const darkColors = {
   accent: '#F59E0B',
   success: '#10B981',
   danger: '#F87171',
+  heroBg: '#12102B',
+  primarySoft: '#1E1B4B',
+  warmSurface: '#2A2218',
+  warmBorder: '#5C4A2B',
 } as const;
 
 export type ThemeColors = { [Key in keyof typeof lightColors]: string };

@@ -74,7 +74,7 @@ function MainTabs() {
         name="BrainDump"
         component={BrainDumpScreen}
         options={{
-          title: 'Dump',
+          title: 'Brain Dump',
           tabBarIcon: ({ color, size }) => <Ionicons name="bulb" color={color} size={size} />,
         }}
       />

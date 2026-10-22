@@ -1,7 +1,9 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { FlatList, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ElvynMascot from '../components/ElvynMascot';
+import ProgressRing from '../components/home/progress_ring';
 import TaskActionSheet from '../components/tasks/TaskActionSheet';
 import RescheduleSheet from '../components/tasks/RescheduleSheet';
 import TaskRow from '../components/tasks/TaskRow';
@@ -19,12 +21,22 @@ import {
   notNowTask,
   rescheduleTask,
 } from '../services/tasks';
+import { getEveningPrompt, getMorningPrompt } from './ElvynContextPrompt';
+import { useColors } from '../theme/colors';
 import type { Task } from '../types/task';
 
-const QUICK_MOOD_MAP: Record<string, number> = { 'Not great': 2, Okay: 3, Good: 4 };
+const QUICK_MOODS = [
+  { label: 'Good', emoji: '🙂', value: 4 },
+  { label: 'Okay', emoji: '😐', value: 3 },
+  { label: 'Not great', emoji: '😕', value: 2 },
+];
 
-function toDateString(date: Date) {
-  return date.toISOString().split('T')[0];
+// Local date, not UTC: toISOString() returns yesterday's date between 00:00 and 01:00 in Lagos.
+function localDateString(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function getTimeOfDay(): 'morning' | 'evening' {
@@ -38,22 +50,25 @@ function getGreeting() {
   return 'Good evening';
 }
 
+type CheckInStatus = { checkins_enabled: boolean; morning_done: boolean; evening_done: boolean };
+
 export default function HomeScreen({ navigation }: any) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+
   const [firstName, setFirstName] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [undatedTasks, setUndatedTasks] = useState<Task[]>([]);
   const [undatedTasksError, setUndatedTasksError] = useState(false);
-  const [checkInStatus, setCheckInStatus] = useState<{
-    checkins_enabled: boolean;
-    morning_done: boolean;
-    evening_done: boolean;
-  } | null>(null);
+  const [checkInStatus, setCheckInStatus] = useState<CheckInStatus | null>(null);
+  const [checkingIn, setCheckingIn] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [rescheduleVisible, setRescheduleVisible] = useState(false);
 
   const timeOfDay = getTimeOfDay();
+  const heroPrompt = timeOfDay === 'morning' ? getMorningPrompt() : getEveningPrompt();
   const alreadyCheckedIn =
     timeOfDay === 'morning' ? checkInStatus?.morning_done : checkInStatus?.evening_done;
 
@@ -61,11 +76,11 @@ export default function HomeScreen({ navigation }: any) {
     try {
       const [profile, todayTasks, status] = await Promise.all([
         getMyProfile(),
-        getTasksByDate(toDateString(new Date()), 'all'),
+        getTasksByDate(localDateString(new Date()), 'all'),
         getTodayCheckinStatus(),
       ]);
       setFirstName(profile.first_name ?? '');
-      setTasks(todayTasks);
+      setTasks(todayTasks.filter((t: Task) => t.status !== 'cancelled'));
       setCheckInStatus(status);
       setUndatedTasksError(false);
       void getUndatedTasks()
@@ -94,168 +109,212 @@ export default function HomeScreen({ navigation }: any) {
     }
   }
 
-  async function handleQuickMood(label: string) {
-    const mood = QUICK_MOOD_MAP[label];
+  async function handleQuickMood(mood: number) {
+    if (checkingIn) return;
+    setCheckingIn(true);
     try {
       if (timeOfDay === 'morning') await submitMorningCheckin(mood, '');
       else await submitEveningCheckin(mood, '', null);
       await loadAll();
     } catch (error) {
       console.log('Quick check-in failed:', error);
+    } finally {
+      setCheckingIn(false);
     }
   }
 
-  const completedCount = tasks.filter((task) => task.status === 'completed').length;
-  const remaining = tasks.length - completedCount;
+  const total = tasks.length;
+  const completedCount = tasks.filter((t) => t.status === 'completed').length;
+  const percent = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+
+  const card = {
+    backgroundColor: colors.surface,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+    padding: 16,
+  } as const;
+
+  const taskHandlers = (item: Task) => ({
+    onPress: () => navigation.navigate('TaskDetail', { taskId: item.id }),
+    onToggleComplete: () => completeTask(item.id).then(loadAll),
+    onMore: () => {
+      setActiveTask(item);
+      setSheetVisible(true);
+    },
+  });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-      <View style={{ backgroundColor: '#1A1636', padding: 20, paddingTop: 50 }}>
-        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16, letterSpacing: 2 }}>
-          ELVYN
-        </Text>
-        <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700', marginTop: 20 }}>
-          {getGreeting()},
-        </Text>
-        <Text style={{ color: '#A78BFA', fontSize: 22, fontWeight: '700' }}>
-          {firstName || 'there'}
-        </Text>
-        <View style={{ marginTop: 16 }}>
-          <ElvynMascot variant="supportive" size={64} />
-        </View>
-      </View>
-
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         style={{ flex: 1 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        contentContainerStyle={{ paddingBottom: 24 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+        }
       >
+        {/* Hero */}
         <View
           style={{
-            backgroundColor: '#fff',
-            margin: 16,
-            marginTop: -24,
-            borderRadius: 16,
-            padding: 16,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            elevation: 2,
+            backgroundColor: colors.heroBg,
+            paddingTop: insets.top + 12,
+            paddingHorizontal: 20,
+            paddingBottom: 56,
+            borderBottomLeftRadius: 28,
+            borderBottomRightRadius: 28,
           }}
         >
-          <View>
-            <Text style={{ fontWeight: '700', fontSize: 15 }}>Today's Progress</Text>
-            <Text style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
-              {completedCount} of {tasks.length} tasks completed
-            </Text>
+          {/* Step 3: streak pill goes on the right of this row */}
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16, letterSpacing: 3 }}>ELVYN</Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 20 }}>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={{ color: '#E5E7EB', fontSize: 20 }}>{getGreeting()},</Text>
+              <Text style={{ color: '#fff', fontSize: 26, fontWeight: '800' }}>{firstName || 'there'}</Text>
+              <Text style={{ color: '#C4B5FD', fontSize: 14, lineHeight: 20, marginTop: 10 }}>{heroPrompt}</Text>
+            </View>
+           <ElvynMascot variant="supportive" size={96} />
+
           </View>
-          <Text style={{ color: '#4F46E5', fontWeight: '700' }}>
-            {tasks.length > 0 ? `${remaining} left` : '—'}
-          </Text>
         </View>
 
-        <TouchableOpacity
-          onPress={() => navigation.navigate('BrainDump')}
-          style={{ backgroundColor: '#fff', marginHorizontal: 16, marginBottom: 16, borderRadius: 16, padding: 16 }}
+        {/* Progress */}
+        <View
+          style={{
+            ...card,
+            marginTop: -32,
+            flexDirection: 'row',
+            alignItems: 'center',
+            elevation: 3,
+            shadowColor: '#000',
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 2 },
+          }}
         >
-          <Text style={{ fontWeight: '700', fontSize: 15 }}>What's on your mind?</Text>
-          <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+          {total > 0 ? (
+            <>
+              <ProgressRing
+                percent={percent}
+                color={colors.primary}
+                track={colors.primarySoft}
+                textColor={colors.text}
+              />
+              <View style={{ marginLeft: 16, flex: 1 }}>
+                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 16 }}>Today's Progress</Text>
+                <Text style={{ color: colors.textMuted, marginTop: 2 }}>
+                  {completedCount} of {total} tasks done
+                </Text>
+              </View>
+            </>
+          ) : (
+            <View>
+              <Text style={{ color: colors.text, fontWeight: '700', fontSize: 16 }}>Today's Progress</Text>
+              <Text style={{ color: colors.textMuted, marginTop: 2 }}>No tasks today. A clear day is okay.</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Brain Dump */}
+        <TouchableOpacity onPress={() => navigation.navigate('BrainDump')} style={card}>
+          <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15 }}>What's on your mind?</Text>
+          <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4, lineHeight: 18 }}>
             Capture ideas, tasks, or anything on your mind. Elvyn will help you turn it into action.
           </Text>
         </TouchableOpacity>
 
-        <View style={{ backgroundColor: '#FFF7ED', marginHorizontal: 16, marginBottom: 16, borderRadius: 16, padding: 16 }}>
-          <Text style={{ fontWeight: '700', fontSize: 15 }}>
-            How are you {timeOfDay === 'morning' ? 'this morning' : 'this evening'}?
-          </Text>
-          {alreadyCheckedIn ? (
-            <Text style={{ color: '#10B981', marginTop: 8, fontWeight: '600' }}>✓ Checked in</Text>
-          ) : (
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              {['Good', 'Okay', 'Not great'].map((label) => (
+        {/* Check-in: hidden entirely when check-ins are turned off */}
+        {checkInStatus?.checkins_enabled && (
+          <View style={{ ...card, backgroundColor: colors.warmSurface }}>
+            {alreadyCheckedIn ? (
+              <Text style={{ color: colors.success, fontWeight: '700' }}>✓ Checked in</Text>
+            ) : (
+              <>
+                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15 }}>
+                  How are you {timeOfDay === 'morning' ? 'this morning' : 'this evening'}?
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  {QUICK_MOODS.map((m) => (
+                    <TouchableOpacity
+                      key={m.label}
+                      disabled={checkingIn}
+                      onPress={() => handleQuickMood(m.value)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: colors.warmBorder,
+                        backgroundColor: colors.surface,
+                        alignItems: 'center',
+                        opacity: checkingIn ? 0.6 : 1,
+                      }}
+                    >
+                      <Text style={{ fontSize: 18 }}>{m.emoji}</Text>
+                      <Text style={{ fontSize: 12, color: colors.text, marginTop: 2 }}>{m.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
                 <TouchableOpacity
-                  key={label}
-                  onPress={() => handleQuickMood(label)}
-                  style={{ flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E5C99B', alignItems: 'center' }}
+                  onPress={() => navigation.navigate('CheckIn', { type: timeOfDay })}
+                  style={{ marginTop: 12 }}
                 >
-                  <Text style={{ fontSize: 12 }}>{label}</Text>
+                  <Text style={{ color: colors.primary, fontWeight: '600' }}>Check in →</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          <TouchableOpacity onPress={() => navigation.navigate('CheckIn', { type: timeOfDay })} style={{ marginTop: 12 }}>
-            <Text style={{ color: '#4F46E5', fontWeight: '600' }}>Check in →</Text>
-          </TouchableOpacity>
-        </View>
+              </>
+            )}
+          </View>
+        )}
 
+        {/* Calendar: the single entry point, sits directly above Today's Tasks */}
         <TouchableOpacity
           onPress={() => navigation.navigate('Calendar')}
-          style={{ backgroundColor: '#fff', marginHorizontal: 16, marginBottom: 16, borderRadius: 16, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+          style={{ ...card, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
         >
-          <Text style={{ fontWeight: '600' }}>
-            Today, {new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+          <Text style={{ color: colors.text, fontWeight: '600' }}>
+            Today, {new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
           </Text>
-          <Text style={{ color: '#4F46E5' }}>View calendar →</Text>
+          <Text style={{ color: colors.primary }}>View calendar →</Text>
         </TouchableOpacity>
 
-        <View style={{ backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 16, padding: 16, marginBottom: 24 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={{ fontWeight: '700', fontSize: 15 }}>
-              Today's Tasks <Text style={{ fontSize: 12, color: '#888' }}>({remaining} left)</Text>
-            </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Calendar')}>
-              <Text style={{ color: '#4F46E5', fontSize: 12 }}>See all →</Text>
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={tasks}
-            keyExtractor={(task) => task.id}
-            scrollEnabled={false}
-            ListEmptyComponent={<Text style={{ color: '#888', paddingVertical: 12 }}>No tasks today.</Text>}
-            renderItem={({ item }) => (
-              <TaskRow
-                task={item}
-                onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
-                onToggleComplete={() => completeTask(item.id).then(loadAll)}
-                onMore={() => {
-                  setActiveTask(item);
-                  setSheetVisible(true);
-                }}
-              />
-            )}
-          />
+        {/* Today's Tasks */}
+        <View style={card}>
+          <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>
+            Today's Tasks
+          </Text>
+          {tasks.length === 0 ? (
+            <Text style={{ color: colors.textMuted, paddingVertical: 12 }}>No tasks today.</Text>
+          ) : (
+            tasks.map((item) => <TaskRow key={item.id} task={item} {...taskHandlers(item)} />)
+          )}
           <TouchableOpacity
             onPress={() => navigation.navigate('CreateTask')}
-            style={{ backgroundColor: '#4F46E5', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 12 }}
+            style={{
+              backgroundColor: colors.primary,
+              borderRadius: 12,
+              padding: 14,
+              alignItems: 'center',
+              marginTop: 12,
+            }}
           >
             <Text style={{ color: '#fff', fontWeight: '600' }}>+ Create task</Text>
           </TouchableOpacity>
         </View>
+
+        {/* To-do (no date): refined in step 4 */}
         {(undatedTasks.length > 0 || undatedTasksError) && (
-          <View style={{ backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 16, padding: 16, marginBottom: 24 }}>
-            <Text style={{ fontWeight: '700', fontSize: 15, marginBottom: 8 }}>
-              To-do <Text style={{ fontSize: 12, color: '#888' }}>(no date)</Text>
+          <View style={card}>
+            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>
+              To-do <Text style={{ fontSize: 12, color: colors.textMuted }}>(no date)</Text>
             </Text>
             {undatedTasksError && (
-              <Text style={{ color: '#888', paddingVertical: 8 }}>
-                Couldn't load undated tasks. Pull to refresh and try again.
+              <Text style={{ color: colors.textMuted, paddingVertical: 8 }}>
+                Couldn't load your to-do list. Pull down to try again.
               </Text>
             )}
-            <FlatList
-              data={undatedTasks}
-              keyExtractor={(task) => task.id}
-              scrollEnabled={false}
-              renderItem={({ item }) => (
-                <TaskRow
-                  task={item}
-                  onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
-                  onToggleComplete={() => completeTask(item.id).then(loadAll)}
-                  onMore={() => {
-                    setActiveTask(item);
-                    setSheetVisible(true);
-                  }}
-                />
-              )}
-            />
+            {undatedTasks.map((item) => (
+              <TaskRow key={item.id} task={item} {...taskHandlers(item)} />
+            ))}
           </View>
         )}
       </ScrollView>
