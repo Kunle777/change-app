@@ -3,7 +3,7 @@ import unittest
 import uuid
 from contextlib import AbstractAsyncContextManager
 from types import SimpleNamespace
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from unittest.mock import AsyncMock, Mock, patch
 from sqlalchemy.exc import IntegrityError
 
@@ -14,7 +14,7 @@ os.environ.setdefault(
 
 from app.tasks.models import TaskEvent, TaskEventOutbox, TaskEventType  # noqa: E402
 from app.tasks.task_event_service import deliver_task_event_outbox, log_task_event  # noqa: E402
-from app.tasks.service import get_undated_tasks, record_overdue_task_events  # noqa: E402
+from app.tasks.service import get_undated_tasks, record_overdue_task_events, snooze_task, get_overdue_tasks  # noqa: E402
 
 
 class FakeSavepoint(AbstractAsyncContextManager):
@@ -234,6 +234,133 @@ class TaskEventServiceTests(unittest.IsolatedAsyncioTestCase):
             event_type=TaskEventType.OVERDUE,
             metadata={"due_date": due_date.isoformat()},
         )
+
+
+
+class SnoozeTaskDueDateTests(unittest.IsolatedAsyncioTestCase):
+    """Tests for the due_date-forwarding logic in snooze_task."""
+
+    def _make_task(self, due_date: datetime | None):
+        task = SimpleNamespace(
+            id=uuid.uuid4(),
+            due_date=due_date,
+            reminder_time=None,
+            is_reminder_sent=False,
+        )
+        return task
+
+    def _make_db(self, task, tz_name: str | None):
+        """Minimal fake session for snooze_task."""
+        task_result = Mock()
+        task_result.scalar_one_or_none.return_value = task
+        tz_result = Mock()
+        tz_result.scalar_one_or_none.return_value = tz_name
+
+        # snooze_task calls get_task_by_id (patched separately) then
+        # db.execute for the timezone query.
+        db = SimpleNamespace(
+            execute=AsyncMock(return_value=tz_result),
+            commit=AsyncMock(),
+            refresh=AsyncMock(),
+        )
+        return db
+
+    async def test_snooze_same_day_does_not_move_due_date(self):
+        # due_date and new reminder are both on 2026-10-01 Africa/Lagos
+        tz = "Africa/Lagos"  # UTC+1
+        due = datetime(2026, 10, 1, 22, 59, 59, tzinfo=timezone.utc)  # 23:59 Lagos
+        task = self._make_task(due)
+        db = self._make_db(task, tz)
+        # reminder moves to 21:00 UTC = 22:00 Lagos — still Oct 1
+        snoozed_until = datetime(2026, 10, 1, 21, 0, 0, tzinfo=timezone.utc)
+
+        with patch("app.tasks.service.log_task_event", new_callable=AsyncMock) as log_event:
+            with patch("app.tasks.service.get_task_by_id", new_callable=AsyncMock, return_value=task):
+                await snooze_task(db, task.id, uuid.uuid4(), snoozed_until)
+
+        self.assertEqual(task.due_date, due)  # unchanged
+        event_types = [call.kwargs["event_type"] for call in log_event.await_args_list]
+        self.assertNotIn(TaskEventType.DEADLINE_CHANGED, event_types)
+        self.assertIn(TaskEventType.NOT_NOW, event_types)
+
+    async def test_snooze_to_later_day_moves_due_date(self):
+        tz = "Africa/Lagos"  # UTC+1
+        due = datetime(2026, 10, 1, 22, 59, 59, tzinfo=timezone.utc)  # Oct 1 Lagos
+        task = self._make_task(due)
+        db = self._make_db(task, tz)
+        # reminder moves to Oct 2 09:00 Lagos = Oct 2 08:00 UTC
+        snoozed_until = datetime(2026, 10, 2, 8, 0, 0, tzinfo=timezone.utc)
+
+        with patch("app.tasks.service.log_task_event", new_callable=AsyncMock) as log_event:
+            with patch("app.tasks.service.get_task_by_id", new_callable=AsyncMock, return_value=task):
+                await snooze_task(db, task.id, uuid.uuid4(), snoozed_until)
+
+        # due_date should be 23:59:59.999 Oct 2 Lagos = 22:59:59.999 UTC
+        from zoneinfo import ZoneInfo
+        expected_due_local = datetime(2026, 10, 2, 23, 59, 59, 999000, tzinfo=ZoneInfo(tz))
+        expected_due_utc = expected_due_local.astimezone(timezone.utc)
+        self.assertEqual(task.due_date, expected_due_utc)
+
+        event_types = [call.kwargs["event_type"] for call in log_event.await_args_list]
+        self.assertIn(TaskEventType.DEADLINE_CHANGED, event_types)
+        self.assertIn(TaskEventType.NOT_NOW, event_types)
+        # DEADLINE_CHANGED must come before NOT_NOW
+        self.assertLess(
+            event_types.index(TaskEventType.DEADLINE_CHANGED),
+            event_types.index(TaskEventType.NOT_NOW),
+        )
+
+    async def test_snooze_no_due_date_task_stays_without_due_date(self):
+        task = self._make_task(None)
+        db = self._make_db(task, "Africa/Lagos")
+        snoozed_until = datetime(2026, 10, 5, 8, 0, 0, tzinfo=timezone.utc)
+
+        with patch("app.tasks.service.log_task_event", new_callable=AsyncMock) as log_event:
+            with patch("app.tasks.service.get_task_by_id", new_callable=AsyncMock, return_value=task):
+                await snooze_task(db, task.id, uuid.uuid4(), snoozed_until)
+
+        self.assertIsNone(task.due_date)
+        event_types = [call.kwargs["event_type"] for call in log_event.await_args_list]
+        self.assertNotIn(TaskEventType.DEADLINE_CHANGED, event_types)
+
+
+class OverdueTasksResponseTests(unittest.IsolatedAsyncioTestCase):
+    """Tests for the count+limit shape of get_overdue_tasks."""
+
+    async def test_overdue_returns_count_and_tasks(self):
+        task = SimpleNamespace(id=uuid.uuid4(), due_date=datetime(2026, 9, 1, tzinfo=timezone.utc))
+        count_result = Mock(scalar_one=Mock(return_value=3))
+        tasks_result = Mock()
+        tasks_result.scalars.return_value.all.return_value = [task]
+        db = SimpleNamespace(execute=AsyncMock(side_effect=[count_result, tasks_result]))
+
+        result = await get_overdue_tasks(db, uuid.uuid4(), "Africa/Lagos", limit=20)
+
+        self.assertEqual(result["count"], 3)
+        self.assertEqual(result["tasks"], [task])
+
+    async def test_overdue_default_limit_is_20(self):
+        count_result = Mock(scalar_one=Mock(return_value=0))
+        tasks_result = Mock()
+        tasks_result.scalars.return_value.all.return_value = []
+        db = SimpleNamespace(execute=AsyncMock(side_effect=[count_result, tasks_result]))
+
+        await get_overdue_tasks(db, uuid.uuid4())
+
+        # Second execute call is the tasks query; check LIMIT appears in its SQL.
+        tasks_call_sql = str(db.execute.await_args_list[1].args[0])
+        self.assertIn("LIMIT", tasks_call_sql.upper())
+
+    async def test_overdue_empty_returns_zero_count(self):
+        count_result = Mock(scalar_one=Mock(return_value=0))
+        tasks_result = Mock()
+        tasks_result.scalars.return_value.all.return_value = []
+        db = SimpleNamespace(execute=AsyncMock(side_effect=[count_result, tasks_result]))
+
+        result = await get_overdue_tasks(db, uuid.uuid4(), limit=20)
+
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["tasks"], [])
 
 
 if __name__ == "__main__":

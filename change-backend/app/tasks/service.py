@@ -20,6 +20,7 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import selectinload
 from app.tasks.task_event_service import log_task_event
 from app.tasks.recurrence_service import stop_task_series
+from app.users.models import User
 
 
 def _local_day_start_utc(timezone_name: str | None, target_date: date | None = None) -> datetime:
@@ -303,6 +304,16 @@ async def delete_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID):
     return db_task
 
 
+def _end_of_local_day_utc(local_date: date, timezone_name: str | None) -> datetime:
+    """Return 23:59:59.999000 of local_date stored as UTC (matches frontend convention)."""
+    zone = ZoneInfo(timezone_name or "Africa/Lagos")
+    end_local = datetime(
+        local_date.year, local_date.month, local_date.day,
+        23, 59, 59, 999000, tzinfo=zone,
+    )
+    return end_local.astimezone(timezone.utc)
+
+
 async def snooze_task(
     db: AsyncSession,
     task_id: uuid.UUID,
@@ -313,8 +324,33 @@ async def snooze_task(
     if not db_task:
         return None
 
-    db_task.reminder_time = _utc(snoozed_until) if snoozed_until else datetime.now(timezone.utc) + timedelta(minutes=10)
+    tz_result = await db.execute(select(User.last_active_timezone).where(User.id == user_id))
+    tz_name: str | None = tz_result.scalar_one_or_none()
+
+    new_reminder = _utc(snoozed_until) if snoozed_until else datetime.now(timezone.utc) + timedelta(minutes=10)
+    db_task.reminder_time = new_reminder
     db_task.is_reminder_sent = False
+
+    # Move due_date forward when the reminder crosses into a later calendar day.
+    old_due = db_task.due_date
+    if old_due is not None:
+        zone = ZoneInfo(tz_name or "Africa/Lagos")
+        reminder_local_date = new_reminder.astimezone(zone).date()
+        due_local_date = old_due.astimezone(zone).date()
+        if reminder_local_date > due_local_date:
+            new_due = _end_of_local_day_utc(reminder_local_date, tz_name)
+            db_task.due_date = new_due
+            await log_task_event(
+                db,
+                user_id=user_id,
+                task_id=db_task.id,
+                event_type=TaskEventType.DEADLINE_CHANGED,
+                metadata={
+                    "old_due": old_due.isoformat(),
+                    "new_due": new_due.isoformat(),
+                    "reason": "not_now",
+                },
+            )
 
     await log_task_event(
         db,
@@ -332,20 +368,21 @@ async def get_overdue_tasks(
     db: AsyncSession,
     user_id: uuid.UUID,
     timezone_name: str | None = None,
-):
+    limit: int = 20,
+) -> dict:
     start_of_today = _local_day_start_utc(timezone_name)
-    result = await db.execute(
-        select(Task).where(
-            and_(
-                Task.user_id == user_id,
-                Task.due_date < start_of_today,
-                Task.status.in_([StatusEnum.pending, StatusEnum.in_progress]),
-                Task.is_deleted.is_(False),
-            )
-        )
+    base_filter = and_(
+        Task.user_id == user_id,
+        Task.due_date < start_of_today,
+        Task.status.in_([StatusEnum.pending, StatusEnum.in_progress]),
+        Task.is_deleted.is_(False),
     )
-    overdue_task = result.scalars().all()
-    return overdue_task
+    count_result = await db.execute(select(func.count()).select_from(Task).where(base_filter))
+    total: int = count_result.scalar_one()
+    tasks_result = await db.execute(
+        select(Task).where(base_filter).order_by(Task.due_date.asc()).limit(limit)
+    )
+    return {"count": total, "tasks": tasks_result.scalars().all()}
 
 
 async def record_overdue_task_events(

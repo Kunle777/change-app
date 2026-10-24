@@ -22,7 +22,7 @@ from app.ai import service as ai_service
 from app.tasks.voice_parse import parse_voice_task
 from pydantic import BaseModel, Field
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, Any
 
 router = APIRouter(
     prefix="/api/tasks",
@@ -81,15 +81,22 @@ async def create_task_route(
 ):
     
     return await service.create_task(db,data, current_user.id)
-@router.get("/overdue", response_model=list[TaskResponse])
+class OverdueResponse(BaseModel):
+    count: int
+    tasks: list[TaskResponse]
+
+
+@router.get("/overdue", response_model=OverdueResponse)
 async def get_overdue_tasks_route(
+    limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     return await service.get_overdue_tasks(
         db,
         current_user.id,
         current_user.last_active_timezone,
+        limit=limit,
     )
 @router.get("", response_model=list[TaskResponse])
 async def get_tasks_route(
