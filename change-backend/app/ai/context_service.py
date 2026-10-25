@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -10,7 +10,8 @@ from app.ai.behavior import BehaviorFacts, load_behavior_observations
 from app.ai.freshness_service import DataFreshness, compute_data_freshness, resolve_user_timezone
 from app.ai.intent_router import SourcePlan, detect_intent, plan_sources
 from app.ai.prompt_builder import build_system_prompt
-from app.ai.task_context import TaskFacts, load_open_task_titles, load_task_facts
+from app.ai.context_budget import Block, fit_blocks, omission_note
+from app.ai.task_context import TaskFacts, load_open_task_titles, load_task_facts, render_groups
 from app.ai.models import AIInteraction
 from app.memory.retrieval import (
     RetrievalResult,
@@ -85,16 +86,68 @@ def _retrieval_status_line(memory: RetrievalResult, tasks: TaskFacts, behavior: 
     return "Context source status: " + ", ".join(parts) + "."
 
 
-def _assemble_task_section(tasks: TaskFacts, behavior: BehaviorFacts) -> str:
+def _memory_item_size_text(memory) -> str:
+    return memory.text + " " * 60  # label + date prefix overhead
+
+
+def apply_context_budget(
+    history: list[dict],
+    memory: RetrievalResult,
+    tasks: TaskFacts,
+    behavior: BehaviorFacts,
+) -> tuple[list[dict], RetrievalResult, str, BehaviorFacts, str]:
+    """Fit every dynamic source into one budget; returns trimmed copies and an omission note."""
+    blocks: list[Block] = [
+        Block(g.name, g.priority, list(g.items), g.min_items, g.header) for g in tasks.groups
+    ]
+    if behavior.state == "found" and behavior.prompt:
+        blocks.append(Block("behavior", 1.0, [behavior.prompt]))
+    # Newest turns first: the last two are never dropped.
+    history_items = [
+        f"{turn['question']}\n{turn['response']}" for turn in reversed(history)
+    ]
+    blocks.append(Block("history", 2.0, history_items, min_items=min(2, len(history_items))))
+    ranked_memories = sorted(
+        memory.memories,
+        key=lambda m: (m.similarity if m.similarity is not None else 0.0, m.created_at),
+        reverse=True,
+    )
+    blocks.append(
+        Block(
+            "memory",
+            4.0,
+            [_memory_item_size_text(m) for m in ranked_memories],
+            min_items=min(1, len(ranked_memories)),
+        )
+    )
+
+    result = fit_blocks(blocks)
+    kept_history = list(reversed(list(reversed(history))[: result.kept.get("history", len(history))]))
+    kept_memories = sorted(
+        ranked_memories[: result.kept.get("memory", len(ranked_memories))],
+        key=lambda m: m.created_at,
+    )
+    trimmed_memory = replace(memory, memories=kept_memories) if memory.memories else memory
+    tasks_prompt = render_groups(tasks.groups, result.kept) if tasks.groups else tasks.prompt
+    if "behavior" in result.omitted:
+        behavior = BehaviorFacts(behavior.state, "", behavior.observation_count)
+    if result.omitted:
+        logger.info("context budget trimmed: %s total_chars=%d", result.omitted, result.total_chars)
+    return kept_history, trimmed_memory, tasks_prompt, behavior, omission_note(result.omitted)
+
+
+def _assemble_task_section(
+    tasks: TaskFacts, behavior: BehaviorFacts, tasks_prompt: str | None = None
+) -> str:
     blocks = []
     if tasks.state == "unavailable":
         blocks.append(
             "Structured task data could not be loaded (a technical problem). "
             "Do not invent the user's tasks or events."
         )
-    elif tasks.prompt:
+    elif (tasks_prompt if tasks_prompt is not None else tasks.prompt):
         blocks.append(UNTRUSTED_TASK_NOTE)
-        blocks.append(tasks.prompt)
+        blocks.append(tasks_prompt if tasks_prompt is not None else tasks.prompt)
     if behavior.state == "unavailable":
         blocks.append(
             "Behavioral observations could not be computed (a technical problem). "
@@ -168,7 +221,12 @@ async def assemble_coaching_context(
         behavior.state,
     )
 
-    structured = _assemble_task_section(tasks, behavior)
+    history, memory, tasks_prompt, behavior, note = apply_context_budget(
+        history, memory, tasks, behavior
+    )
+    structured = _assemble_task_section(tasks, behavior, tasks_prompt)
+    if note:
+        structured = f"{structured}\n\n{note}"
     extra = memory_prompt_section(memory, tz_name=timezone_name)
     status = _retrieval_status_line(memory, tasks, behavior)
     system_prompt = build_system_prompt(
