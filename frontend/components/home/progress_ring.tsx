@@ -13,7 +13,7 @@ export default function ProgressRing({ percent, size = 76, stroke = 8, color, tr
         <Circle cx={size / 2} cy={size / 2} r={r} stroke={track} strokeWidth={stroke} fill="none" />
         <Circle
           cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} fill="none"
-          strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - clamped / 100)}
+          strokeLinecap="round" strokeDasharray={[c, c]} strokeDashoffset={c * (1 - clamped / 100)}
         />
       </Svg>
       <Text style={{ color: textColor, fontWeight: '800', fontSize: size / 4.2 }}>{clamped}%</Text>

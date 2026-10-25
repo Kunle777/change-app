@@ -4,8 +4,9 @@ import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ElvynMascot from '../components/ElvynMascot';
 import ProgressRing from '../components/home/progress_ring';
-import TaskActionSheet from '../components/tasks/TaskActionSheet';
-import RescheduleSheet from '../components/tasks/RescheduleSheet';
+import TaskActionsHost from '../components/tasks/TaskActionsHost';
+import { useTaskCompletion } from '../hooks/useTaskCompletion';
+import { localDateString } from '../utils/localDate';
 import TaskRow from '../components/tasks/TaskRow';
 import { getMyProfile } from '../services/users';
 import {
@@ -13,14 +14,7 @@ import {
   submitEveningCheckin,
   submitMorningCheckin,
 } from '../services/checkins';
-import {
-  cancelTask,
-  completeTask,
-  getTasksByDate,
-  getUndatedTasks,
-  notNowTask,
-  rescheduleTask,
-} from '../services/tasks';
+import { getTasksByDate, getUndatedTasks } from '../services/tasks';
 import { getEveningPrompt, getMorningPrompt } from './ElvynContextPrompt';
 import { useColors } from '../theme/colors';
 import type { Task } from '../types/task';
@@ -30,14 +24,6 @@ const QUICK_MOODS = [
   { label: 'Okay', emoji: '😐', value: 3 },
   { label: 'Not great', emoji: '😕', value: 2 },
 ];
-
-// Local date, not UTC: toISOString() returns yesterday's date between 00:00 and 01:00 in Lagos.
-function localDateString(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
 
 function getTimeOfDay(): 'morning' | 'evening' {
   return new Date().getHours() < 12 ? 'morning' : 'evening';
@@ -64,8 +50,6 @@ export default function HomeScreen({ navigation }: any) {
   const [checkingIn, setCheckingIn] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [rescheduleVisible, setRescheduleVisible] = useState(false);
 
   const timeOfDay = getTimeOfDay();
   const heroPrompt = timeOfDay === 'morning' ? getMorningPrompt() : getEveningPrompt();
@@ -99,6 +83,11 @@ export default function HomeScreen({ navigation }: any) {
       loadAll();
     }, [loadAll]),
   );
+
+  const reload = useCallback(() => {
+    void loadAll();
+  }, [loadAll]);
+  const completeOptimistically = useTaskCompletion([setTasks, setUndatedTasks], reload);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -137,11 +126,8 @@ export default function HomeScreen({ navigation }: any) {
 
   const taskHandlers = (item: Task) => ({
     onPress: () => navigation.navigate('TaskDetail', { taskId: item.id }),
-    onToggleComplete: () => completeTask(item.id).then(loadAll),
-    onMore: () => {
-      setActiveTask(item);
-      setSheetVisible(true);
-    },
+    onToggleComplete: () => completeOptimistically(item),
+    onMore: () => setActiveTask(item),
   });
 
   return (
@@ -319,25 +305,12 @@ export default function HomeScreen({ navigation }: any) {
         )}
       </ScrollView>
 
-      <TaskActionSheet
-        visible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
-        onMarkDone={() => activeTask && completeTask(activeTask.id).then(loadAll)}
-        onNotNow={() => activeTask && notNowTask(activeTask.id, 'later_today').then(loadAll)}
-        onReschedule={() => setRescheduleVisible(true)}
-        onEdit={() => activeTask && navigation.navigate('CreateTask', { taskId: activeTask.id })}
-        onCancel={() => activeTask && cancelTask(activeTask.id).then(loadAll)}
-      />
-      <RescheduleSheet
-        visible={rescheduleVisible}
+      <TaskActionsHost
         task={activeTask}
-        onClose={() => setRescheduleVisible(false)}
-        onSave={async (dueDate, reminderTime) => {
-          if (activeTask) {
-            await rescheduleTask(activeTask.id, dueDate, reminderTime);
-            await loadAll();
-          }
-        }}
+        onClose={() => setActiveTask(null)}
+        onChanged={reload}
+        onMarkDone={completeOptimistically}
+        navigation={navigation}
       />
     </View>
   );

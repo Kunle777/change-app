@@ -1,17 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, TouchableOpacity, FlatList, Modal } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import TaskRow from '../components/tasks/TaskRow';
-import TaskActionsSheet from '../components/tasks/TaskActionSheet';
-import RescheduleSheet from '../components/tasks/RescheduleSheet';
-import {
-  getCalendarDates,
-  getTasksByDate,
-  completeTask,
-  notNowTask,
-  cancelTask,
-  rescheduleTask,
-} from '../services/tasks';
+import TaskActionsHost from '../components/tasks/TaskActionsHost';
+import { useTaskCompletion } from '../hooks/useTaskCompletion';
+import { localDateString } from '../utils/localDate';
+import { getCalendarDates, getTasksByDate } from '../services/tasks';
 import { Task } from '../types/task';
 
 const FILTERS = ['all', 'incomplete', 'completed', 'overdue'] as const;
@@ -24,13 +19,9 @@ const FILTER_LABELS: Record<Filter, string> = {
   overdue: 'Overdue',
 };
 
-function toDateString(d: Date) {
-  return d.toISOString().split('T')[0];
-}
-
 export default function CalendarScreen({ navigation }: any) {
   const today = new Date();
-  const [selectedDate, setSelectedDate] = useState(toDateString(today));
+  const [selectedDate, setSelectedDate] = useState(localDateString(today));
   const [visibleMonth, setVisibleMonth] = useState({
     year: today.getFullYear(),
     month: today.getMonth() + 1,
@@ -41,8 +32,6 @@ export default function CalendarScreen({ navigation }: any) {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [rescheduleVisible, setRescheduleVisible] = useState(false);
 
   const loadMonthDots = useCallback(async () => {
     try {
@@ -62,9 +51,12 @@ export default function CalendarScreen({ navigation }: any) {
     }
   }, [visibleMonth, selectedDate]);
 
+  const requestId = useRef(0);
   const loadTasksForDate = useCallback(async () => {
+    const id = ++requestId.current;
     try {
       const result = await getTasksByDate(selectedDate, filter);
+      if (id !== requestId.current) return; // a newer date/filter request won
       setTasks(result);
     } catch (err) {
       console.log('Failed to load tasks for date:', err);
@@ -79,10 +71,19 @@ export default function CalendarScreen({ navigation }: any) {
     loadTasksForDate();
   }, [loadTasksForDate]);
 
-  function refresh() {
+  const refresh = useCallback(() => {
     loadTasksForDate();
     loadMonthDots();
-  }
+  }, [loadTasksForDate, loadMonthDots]);
+
+  // Pick up changes made on Home / Task Detail when returning to this screen.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const completeOptimistically = useTaskCompletion([setTasks], refresh);
 
   const incompleteTasks = tasks.filter((t) => t.status !== 'completed');
   const completedTasks = tasks.filter((t) => t.status === 'completed');
@@ -192,11 +193,8 @@ export default function CalendarScreen({ navigation }: any) {
           <TaskRow
             task={item}
             onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
-            onToggleComplete={() => completeTask(item.id).then(refresh)}
-            onMore={() => {
-              setActiveTask(item);
-              setSheetVisible(true);
-            }}
+            onToggleComplete={() => completeOptimistically(item)}
+            onMore={() => setActiveTask(item)}
           />
         )}
         ListFooterComponent={
@@ -208,11 +206,8 @@ export default function CalendarScreen({ navigation }: any) {
                   key={item.id}
                   task={item}
                   onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
-                  onToggleComplete={() => completeTask(item.id).then(refresh)}
-                  onMore={() => {
-                    setActiveTask(item);
-                    setSheetVisible(true);
-                  }}
+                  onToggleComplete={() => completeOptimistically(item)}
+                  onMore={() => setActiveTask(item)}
                 />
               ))}
             </View>
@@ -220,25 +215,12 @@ export default function CalendarScreen({ navigation }: any) {
         }
       />
 
-      <TaskActionsSheet
-        visible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
-        onMarkDone={() => activeTask && completeTask(activeTask.id).then(refresh)}
-        onNotNow={() => activeTask && notNowTask(activeTask.id, 'later_today').then(refresh)}
-        onReschedule={() => setRescheduleVisible(true)}
-        onEdit={() => activeTask && navigation.navigate('CreateTask', { taskId: activeTask.id })}
-        onCancel={() => activeTask && cancelTask(activeTask.id).then(refresh)}
-      />
-      <RescheduleSheet
-        visible={rescheduleVisible}
+      <TaskActionsHost
         task={activeTask}
-        onClose={() => setRescheduleVisible(false)}
-        onSave={async (dueDate, reminderTime) => {
-          if (activeTask) {
-            await rescheduleTask(activeTask.id, dueDate, reminderTime);
-            await refresh();
-          }
-        }}
+        onClose={() => setActiveTask(null)}
+        onChanged={refresh}
+        onMarkDone={completeOptimistically}
+        navigation={navigation}
       />
     </View>
   );
