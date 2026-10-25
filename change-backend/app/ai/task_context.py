@@ -91,6 +91,25 @@ async def _tasks_where(db: AsyncSession, statement) -> list[Task]:
     return list(result.scalars().all())
 
 
+async def load_open_task_titles(db: AsyncSession, user_id: UUID, limit: int = 50) -> list[str]:
+    """Titles of the user's own open tasks, used only to detect that a message names one."""
+    try:
+        result = await db.execute(
+            select(Task.title)
+            .where(
+                Task.user_id == user_id,
+                Task.is_deleted.is_(False),
+                Task.status.in_(OPEN_STATUSES),
+            )
+            .order_by(Task.due_date.asc().nulls_last(), Task.created_at.desc())
+            .limit(limit)
+        )
+        return [title for title in result.scalars().all() if title]
+    except Exception:
+        logger.warning("Could not load open task titles", exc_info=True)
+        return []
+
+
 async def load_task_facts(
     db: AsyncSession,
     user_id: UUID,

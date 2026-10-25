@@ -10,7 +10,7 @@ from app.ai.behavior import BehaviorFacts, load_behavior_observations
 from app.ai.freshness_service import DataFreshness, compute_data_freshness, resolve_user_timezone
 from app.ai.intent_router import SourcePlan, detect_intent, plan_sources
 from app.ai.prompt_builder import build_system_prompt
-from app.ai.task_context import TaskFacts, load_task_facts
+from app.ai.task_context import TaskFacts, load_open_task_titles, load_task_facts
 from app.ai.models import AIInteraction
 from app.memory.retrieval import (
     RetrievalResult,
@@ -115,7 +115,8 @@ async def assemble_coaching_context(
     additional_instructions: str | None = None,
 ) -> CoachingContext:
     intent = detect_intent(message)
-    plan = plan_sources(message, intent)
+    titles = [] if intent == "out_of_scope" else await load_open_task_titles(db, user_id)
+    plan = plan_sources(message, intent, task_titles=titles)
     user_timezone = await resolve_user_timezone(db, user_id, timezone_name)
     local_date = datetime.now(user_timezone).date().isoformat()
     freshness = await compute_data_freshness(db, user_id, user_timezone.key)
