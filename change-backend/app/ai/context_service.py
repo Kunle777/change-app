@@ -6,7 +6,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.behavior import BehaviorFacts, load_behavior_observations
+from app.ai.behavior import (
+    BehaviorFacts,
+    drop_recently_mentioned,
+    load_behavior_observations,
+    render_observations,
+)
 from app.ai.freshness_service import DataFreshness, compute_data_freshness, resolve_user_timezone
 from app.ai.intent_router import SourcePlan, detect_intent, plan_sources
 from app.ai.prompt_builder import build_system_prompt
@@ -198,6 +203,20 @@ async def assemble_coaching_context(
         )
     if plan.need_behavior:
         behavior = await load_behavior_observations(db, user_id, needed=True)
+        if behavior.state == "found" and behavior.observations:
+            # Don't bring up the same task twice in a row; the coach shouldn't nag.
+            recent_replies = [turn["response"] for turn in history[-2:]]
+            fresh = drop_recently_mentioned(behavior.observations, recent_replies)
+            if len(fresh) != len(behavior.observations):
+                behavior = BehaviorFacts(
+                    "found" if fresh else "none_found",
+                    render_observations(fresh)
+                    if fresh
+                    else "Behavioral observations: nothing new to raise beyond what was "
+                    "already discussed in this conversation.",
+                    len(fresh),
+                    fresh,
+                )
 
     if plan.need_memory:
         memory = await retrieve_memories(
