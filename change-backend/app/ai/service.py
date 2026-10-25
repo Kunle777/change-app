@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
@@ -9,12 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.checkins import service as checkin_service
 from app.ai.models import AIUsageLog
 from app.ai import gemini
-from app.ai.prompt_builder import build_prompt, build_system_prompt_for_user
+from app.ai.prompt_builder import build_system_prompt_for_user
 from app.ai.freshness_service import resolve_user_timezone
-from app.ai.context_builder import build_context
 from app.ai.context_service import assemble_coaching_context
 from app.ai.schemas import ChatResponse, ConversationDetail, ConversationSummary, ConversationTurn
-from app.ai.intent_router import detect_intent
+
 from app.ai.models import AIInteraction, Conversation
 from app.ai import action_service
 from app.memory.sources import CONVERSATION_SOURCE, is_indexable_user_message
@@ -82,57 +80,6 @@ async def increment_usage(db: AsyncSession, user_id):
         log = AIUsageLog(user_id=user_id, usage_date=today, request_count=1)
         db.add(log)
     await db.commit()
-
-
-async def _handle_chat_legacy(db: AsyncSession, user_id, message: str) -> ChatResponse:
-    if len(message) > 2000:
-        raise ValueError("Message too long")
-
-    intent = detect_intent(message)
-    context = await build_context(db, user_id, intent)
-    system_prompt, freshness = await build_system_prompt_for_user(
-        db,
-        user_id,
-        intent,
-        context,
-        additional_instructions=(
-            "Return only a valid JSON object with string fields 'intent' and 'message' "
-            "and a 'suggested_actions' array."
-        ),
-    )
-    prompt = build_prompt(system_prompt, message)
-
-    raw = await asyncio.to_thread(gemini.generate_response, prompt)
-
-    try:
-        parsed = json.loads(raw)
-        response = ChatResponse(
-            intent=parsed.get("intent", intent),
-            message=parsed.get("message", "Sorry, I couldn't process that."),
-            suggested_actions=parsed.get("suggested_actions", []),
-        )
-    except Exception:
-        response = ChatResponse(
-            intent="general_coaching",
-            message="I had trouble understanding that — could you rephrase?",
-            suggested_actions=[],
-        )
-
-    db.add(
-        AIInteraction(
-            user_id=user_id,
-            intent=response.intent,
-            question=message,
-            response=response.message,
-            context_used=context,
-            context_size=len(context),
-            context_richness=freshness.tier.value,
-            status="success",
-        )
-    )
-    await db.commit()
-
-    return response
 
 
 async def list_conversations(db: AsyncSession, user_id: UUID) -> list[ConversationSummary]:
@@ -232,99 +179,6 @@ async def get_or_create_active_conversation(
     db.add(conversation)
     await db.flush()
     return conversation
-
-
-async def _recent_conversation_history(
-    db: AsyncSession, user_id: UUID, conversation_id: UUID
-) -> str:
-    # Seven prior turns represent at most 14 history messages; the current prompt adds message 15.
-    result = await db.execute(
-        select(AIInteraction)
-        .where(
-            AIInteraction.user_id == user_id,
-            AIInteraction.conversation_id == conversation_id,
-        )
-        .order_by(AIInteraction.created_at.desc())
-        .limit(7)
-    )
-    turns = list(result.scalars().all())
-    turns.reverse()
-    if not turns:
-        return "No earlier messages in this conversation."
-    lines = []
-    for turn in turns:
-        lines.extend((f"User: {turn.question}", f"ELVYN: {turn.response}"))
-    return "\n".join(lines)
-
-
-async def _handle_chat_without_tools(
-    db: AsyncSession,
-    user_id: UUID,
-    message: str,
-    conversation_id: UUID | None = None,
-    timezone_name: str | None = None,
-) -> ChatResponse:
-    if len(message) > 2000:
-        raise ValueError("Message too long")
-
-    if conversation_id is None:
-        conversation = await get_or_create_active_conversation(
-            db, user_id, message, timezone_name
-        )
-    else:
-        conversation = await continue_conversation(db, user_id, conversation_id)
-        if conversation is None:
-            raise LookupError("Conversation not found")
-
-    intent = detect_intent(message)
-    context = await build_context(db, user_id, intent)
-    history = await _recent_conversation_history(db, user_id, conversation.id)
-    system_prompt, freshness = await build_system_prompt_for_user(
-        db,
-        user_id,
-        intent,
-        context,
-        timezone_name=timezone_name,
-        additional_instructions=(
-            "Return only a valid JSON object with string fields 'intent' and 'message' "
-            "and a 'suggested_actions' array."
-        ),
-    )
-    prompt = build_prompt(system_prompt, message, history)
-    raw = await asyncio.to_thread(gemini.generate_response, prompt)
-
-    try:
-        parsed = json.loads(raw)
-        response = ChatResponse(
-            intent=parsed.get("intent", intent),
-            message=parsed.get("message", "Sorry, I couldn't process that."),
-            suggested_actions=parsed.get("suggested_actions", []),
-            conversation_id=conversation.id,
-        )
-    except Exception:
-        response = ChatResponse(
-            intent="general_coaching",
-            message="I had trouble understanding that — could you rephrase?",
-            suggested_actions=[],
-            conversation_id=conversation.id,
-        )
-
-    conversation.updated_at = datetime.now(timezone.utc)
-    db.add(
-        AIInteraction(
-            user_id=user_id,
-            conversation_id=conversation.id,
-            intent=response.intent,
-            question=message,
-            response=response.message,
-            context_used=context,
-            context_size=len(context),
-            context_richness=freshness.tier.value,
-            status="success",
-        )
-    )
-    await db.commit()
-    return response
 
 
 async def handle_chat(
