@@ -1,84 +1,66 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  StyleSheet,
-  Platform,
-  ActivityIndicator,
-  Modal,
-  Pressable,
-} from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import ChatBubble from '../components/ai/ChatBubble';
+import ChatEmptyState from '../components/ai/ChatEmptyState';
+import HistorySheet from '../components/ai/HistorySheet';
+import TypingIndicator from '../components/ai/TypingIndicator';
+import type { ChatMessage } from '../components/ai/chatTypes';
+import ElvynMascot from '../components/ElvynMascot';
 import {
-  sendChatMessage,
-  getEveningSummary,
-  getChatConversations,
-  getChatConversation,
-  getPendingChatActions,
   confirmChatAction,
+  getChatConversation,
+  getChatConversations,
+  getEveningSummary,
+  getPendingChatActions,
   rejectChatAction,
+  sendChatMessage,
 } from '../services/ai';
 import type { ChatConversation, PendingChatAction } from '../services/ai';
 import { supabase } from '../services/supabase';
-import { useColors, type ThemeColors } from '../theme/colors';
-
-type Message = {
-  id: string;
-  role: 'user' | 'ai';
-  text: string;
-  timestamp: string;
-  pendingActionId?: string;
-  pendingActionSummary?: string;
-  pendingActionStatus?: string;
-};
+import { getMyProfile } from '../services/users';
+import { formatClock } from '../utils/chatFormat';
+import { useColors } from '../theme/colors';
 
 const NEW_CONVERSATION = 'new';
+const FRIENDLY_ERROR = "I couldn't reach Elvyn just now. Check your connection and try again.";
+const HISTORY_ERROR = "We couldn't load your conversations. Please try again.";
 
-function getActiveConversationKey(userId: string) {
-  return `elvyn_ai_active_conversation:${userId}`;
-}
+const activeKey = (userId: string) => `elvyn_ai_active_conversation:${userId}`;
 
 function mapConversationMessages(
   detail: Awaited<ReturnType<typeof getChatConversation>>,
   pendingActions: PendingChatAction[],
-): Message[] {
-  const pendingById = new Map<string, PendingChatAction>(
-    pendingActions.map((action) => [action.id, action]),
-  );
-  return detail.messages.flatMap((turn) => [
-    {
-      id: `${turn.id}-user`,
-      role: 'user' as const,
-      text: turn.question,
-      timestamp: turn.created_at ? new Date(turn.created_at).toLocaleTimeString() : '',
-    },
-    {
-      id: `${turn.id}-ai`,
-      role: 'ai' as const,
-      text: turn.response,
-      timestamp: turn.created_at ? new Date(turn.created_at).toLocaleTimeString() : '',
-      pendingActionId: turn.pending_action_id ?? undefined,
-      pendingActionSummary: turn.pending_action_id
-        ? pendingById.get(turn.pending_action_id)?.summary
-        : undefined,
-      pendingActionStatus: turn.pending_action_id
-        ? pendingById.has(turn.pending_action_id)
-          ? 'pending'
-          : 'resolved'
-        : undefined,
-    },
-  ]);
+): ChatMessage[] {
+  const pendingById = new Map(pendingActions.map((action) => [action.id, action]));
+  return detail.messages.flatMap((turn) => {
+    const time = formatClock(turn.created_at);
+    return [
+      { id: `${turn.id}-user`, role: 'user' as const, text: turn.question, timestamp: time },
+      {
+        id: `${turn.id}-ai`,
+        role: 'ai' as const,
+        text: turn.response,
+        timestamp: time,
+        pendingActionId: turn.pending_action_id ?? undefined,
+        pendingActionSummary: turn.pending_action_id ? pendingById.get(turn.pending_action_id)?.summary : undefined,
+        pendingActionStatus: turn.pending_action_id
+          ? pendingById.has(turn.pending_action_id)
+            ? 'pending'
+            : 'resolved'
+          : undefined,
+      },
+    ];
+  });
 }
 
 export default function AIScreen() {
   const colors = useColors();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const insets = useSafeAreaInsets();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -86,506 +68,347 @@ export default function AIScreen() {
   const [historyVisible, setHistoryVisible] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [restoringConversation, setRestoringConversation] = useState(true);
-  const flatListRef = useRef<FlatList>(null);
+  const [restoring, setRestoring] = useState(true);
+  const [firstName, setFirstName] = useState('');
+  const listRef = useRef<FlatList<ChatMessage>>(null);
 
   useEffect(() => {
     let active = true;
-
-    const restoreConversation = async () => {
+    (async () => {
+      try {
+        const profile = await getMyProfile();
+        if (active) setFirstName(profile.first_name ?? '');
+      } catch {
+        /* greeting works without a name */
+      }
       try {
         const { data, error } = await supabase.auth.getUser();
-        if (error) throw error;
-        if (!data.user) return;
-
-        const storageKey = getActiveConversationKey(data.user.id);
-        const storedId = await AsyncStorage.getItem(storageKey);
-        if (storedId === NEW_CONVERSATION) return;
-
-        const availableConversations = await getChatConversations();
+        if (error || !data.user) return;
+        const stored = await AsyncStorage.getItem(activeKey(data.user.id));
+        if (stored === NEW_CONVERSATION) return;
+        const available = await getChatConversations();
         if (!active) return;
-        setConversations(availableConversations);
-
-        const targetId = storedId ?? availableConversations[0]?.id;
+        setConversations(available);
+        const targetId = stored ?? available[0]?.id;
         if (!targetId) return;
-
-        const detail = await getChatConversation(targetId);
-        const pendingActions = await getPendingChatActions(targetId);
+        const [detail, pending] = await Promise.all([getChatConversation(targetId), getPendingChatActions(targetId)]);
         if (!active) return;
-
         setConversationId(detail.id);
-        setMessages(mapConversationMessages(detail, pendingActions));
-        if (storedId === null) {
-          await AsyncStorage.setItem(storageKey, detail.id);
-        }
+        setMessages(mapConversationMessages(detail, pending));
+        if (stored === null) await AsyncStorage.setItem(activeKey(data.user.id), detail.id);
       } catch (error) {
-        if (active) {
-          setHistoryError(
-            error instanceof Error ? error.message : 'Could not restore your conversation.',
-          );
-        }
+        console.log('Restore conversation failed:', error);
       } finally {
-        if (active) setRestoringConversation(false);
+        if (active) setRestoring(false);
       }
-    };
-
-    void restoreConversation();
+    })();
     return () => {
       active = false;
     };
   }, []);
 
   useEffect(() => {
-    if (messages.length > 0) {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }
+    if (messages.length > 0) requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, [messages, sending]);
 
-  const addMessage = (
-    role: 'user' | 'ai',
-    text: string,
-    pendingAction?: { id: string; summary: string },
-  ) => {
-    const newMessage: Message = {
-      id: Date.now().toString() + role,
-      role,
-      text,
-      timestamp: new Date().toLocaleTimeString(),
-      pendingActionId: pendingAction?.id,
-      pendingActionSummary: pendingAction?.summary,
-      pendingActionStatus: pendingAction ? 'pending' : undefined,
-    };
-    setMessages((prev) => [...prev, newMessage]);
+  const push = useCallback((message: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    setMessages((prev) => [
+      ...prev,
+      { ...message, id: `${Date.now()}-${prev.length}-${message.role}`, timestamp: formatClock(new Date()) },
+    ]);
+  }, []);
+
+  const rememberConversation = useCallback(async (id: string) => {
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (data.user) await AsyncStorage.setItem(activeKey(data.user.id), id);
+    } catch (error) {
+      console.log('Could not remember active conversation:', error);
+    }
+  }, []);
+
+  const send = useCallback(
+    async (text: string, opts?: { alreadyShown?: boolean }) => {
+      const message = text.trim();
+      if (!message || sending) return;
+      if (!opts?.alreadyShown) push({ role: 'user', text: message });
+      setInput('');
+      setSending(true);
+      try {
+        const result = await sendChatMessage(message, conversationId);
+        if (result.conversation_id) {
+          setConversationId(result.conversation_id);
+          void rememberConversation(result.conversation_id);
+        }
+        push({
+          role: 'ai',
+          text: result.message,
+          sources: result.memory_sources ?? [],
+          pendingActionId: result.pending_action_id ?? undefined,
+          pendingActionSummary: result.pending_action_summary ?? undefined,
+          pendingActionStatus: result.pending_action_id ? 'pending' : undefined,
+        });
+      } catch (error) {
+        console.log('Chat failed:', error);
+        push({ role: 'ai', text: FRIENDLY_ERROR, failed: true, retryText: message });
+      } finally {
+        setSending(false);
+      }
+    },
+    [conversationId, push, rememberConversation, sending],
+  );
+
+  const retry = (failed: ChatMessage) => {
+    if (!failed.retryText) return;
+    setMessages((prev) => prev.filter((m) => m.id !== failed.id));
+    void send(failed.retryText, { alreadyShown: true });
   };
 
-  const openHistory = async () => {
-    setHistoryVisible(true);
+  const decide = async (message: ChatMessage, confirm: boolean) => {
+    if (sending || !message.pendingActionId) return;
+    setSending(true);
+    try {
+      const result = confirm ? await confirmChatAction(message.pendingActionId) : await rejectChatAction(message.pendingActionId);
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, pendingActionStatus: result.status } : m)));
+      const followUp: Record<string, string> = {
+        created: 'Done. I added the task.',
+        updated: 'Done. The task has been updated.',
+        cancelled: 'Done. The task was cancelled.',
+        rejected: 'No problem. Nothing was changed.',
+        expired: 'That one expired. Ask me again and I will set it up fresh.',
+        stale: 'That task changed in the meantime. Ask me again and I will use the latest version.',
+      };
+      push({ role: 'ai', text: followUp[result.status] ?? "That couldn't be completed. Please try again." });
+    } catch (error) {
+      console.log('Pending action failed:', error);
+      push({ role: 'ai', text: "That didn't go through. Please try again in a moment." });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const eveningSummary = async () => {
+    if (sending) return;
+    push({ role: 'user', text: 'Evening summary' });
+    setSending(true);
+    try {
+      const result = await getEveningSummary();
+      push({ role: 'ai', text: result.message });
+    } catch (error) {
+      console.log('Evening summary failed:', error);
+      push({ role: 'ai', text: "I couldn't put your summary together just now. Please try again in a bit." });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const loadHistory = async () => {
     setLoadingHistory(true);
     setHistoryError(null);
     try {
       setConversations(await getChatConversations());
     } catch (error) {
-      setHistoryError(
-        error instanceof Error ? error.message : 'Could not load conversation history.',
-      );
+      console.log('History failed:', error);
+      setHistoryError(HISTORY_ERROR);
     } finally {
       setLoadingHistory(false);
     }
+  };
+
+  const openHistory = () => {
+    setHistoryVisible(true);
+    void loadHistory();
   };
 
   const selectConversation = async (id: string) => {
     setLoadingHistory(true);
     setHistoryError(null);
     try {
-      const detail = await getChatConversation(id);
-      const pendingActions = await getPendingChatActions(id);
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      if (!data.user) throw new Error('Please log in again to open this conversation.');
-      await AsyncStorage.setItem(getActiveConversationKey(data.user.id), detail.id);
+      const [detail, pending] = await Promise.all([getChatConversation(id), getPendingChatActions(id)]);
+      await rememberConversation(detail.id);
       setConversationId(detail.id);
-      setMessages(mapConversationMessages(detail, pendingActions));
+      setMessages(mapConversationMessages(detail, pending));
       setHistoryVisible(false);
     } catch (error) {
-      setHistoryError(
-        error instanceof Error ? error.message : 'Could not load this conversation.',
-      );
+      console.log('Open conversation failed:', error);
+      setHistoryError("We couldn't open that conversation. Please try again.");
     } finally {
       setLoadingHistory(false);
     }
   };
 
-  const startNewConversation = async () => {
+  const newChat = async () => {
     try {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      if (!data.user) throw new Error('Please log in again to start a conversation.');
-      await AsyncStorage.setItem(
-        getActiveConversationKey(data.user.id),
-        NEW_CONVERSATION,
-      );
-      setConversationId(null);
-      setMessages([]);
-      setInput('');
-      setHistoryVisible(false);
-      setHistoryError(null);
+      const { data } = await supabase.auth.getUser();
+      if (data.user) await AsyncStorage.setItem(activeKey(data.user.id), NEW_CONVERSATION);
     } catch (error) {
-      setHistoryError(
-        error instanceof Error ? error.message : 'Could not start a new conversation.',
-      );
+      console.log('Could not flag new conversation:', error);
     }
-  };
-
-  const handleSend = async () => {
-    if (!input.trim() || sending) return;
-    const userText = input.trim();
-    addMessage('user', userText);
+    setConversationId(null);
+    setMessages([]);
     setInput('');
-    setSending(true);
-    try {
-      const result = await sendChatMessage(userText, conversationId);
-      setConversationId(result.conversation_id ?? conversationId);
-      if (result.conversation_id) {
-        addMessage(
-          'ai',
-          result.message,
-          result.pending_action_id
-            ? { id: result.pending_action_id, summary: result.pending_action_summary }
-            : undefined,
-        );
-        try {
-          const { data, error } = await supabase.auth.getUser();
-          if (error) throw error;
-          if (data.user) {
-            await AsyncStorage.setItem(
-              getActiveConversationKey(data.user.id),
-              result.conversation_id,
-            );
-          }
-        } catch (storageError) {
-          console.warn('Could not remember the active AI conversation', storageError);
-        }
-      } else {
-        addMessage('ai', result.message);
-      }
-    } catch (err: any) {
-      addMessage('ai', `⚠️ ${err.message}`);
-    } finally {
-      setSending(false);
-    }
+    setHistoryVisible(false);
+    setHistoryError(null);
   };
 
-  const decidePendingAction = async (messageId: string, actionId: string, confirm: boolean) => {
-    if (sending) return;
-    setSending(true);
-    try {
-      const result = confirm
-        ? await confirmChatAction(actionId)
-        : await rejectChatAction(actionId);
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === messageId
-            ? { ...message, pendingActionStatus: result.status }
-            : message,
-        ),
-      );
-      if (result.status === 'updated' || result.status === 'cancelled') {
-        addMessage(
-          'ai',
-          result.status === 'cancelled'
-            ? 'Confirmed. The task was cancelled.'
-            : 'Confirmed. The task has been updated.',
-        );
-      } else if (result.status === 'rejected') {
-        addMessage('ai', 'No change was made.');
-      } else {
-        addMessage('ai', result.reason || 'This action could not be completed.');
-      }
-    } catch (err: any) {
-      addMessage('ai', `⚠️ ${err.message}`);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleEveningSummary = async () => {
-    if (sending) return;
-    setSending(true);
-    try {
-      const result = await getEveningSummary();
-      addMessage('ai', result.message);
-    } catch (err: any) {
-      addMessage('ai', `⚠️ ${err.message}`);
-    } finally {
-      setSending(false);
-    }
-  };
+  const lastAiIndex = (index: number) => messages[index + 1]?.role !== 'ai';
+  const canSend = input.trim().length > 0 && !sending && !restoring;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View
+        style={{
+          backgroundColor: colors.heroBg,
+          paddingTop: insets.top + 10,
+          paddingBottom: 14,
+          paddingHorizontal: 16,
+          flexDirection: 'row',
+          alignItems: 'center',
+        }}
       >
-        <View style={styles.conversationActions}>
-          <TouchableOpacity onPress={openHistory} disabled={sending || restoringConversation}>
-            <Text style={styles.conversationActionText}>History</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => void startNewConversation()} disabled={sending}>
-            <Text style={styles.conversationActionText}>New chat</Text>
-          </TouchableOpacity>
+        <ElvynMascot variant="supportive" size={34} />
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>Ask Elvyn</Text>
+          <Text style={{ color: '#C4C0F5', fontSize: 12 }}>Your personal coach</Text>
         </View>
-        {restoringConversation && (
-          <View style={styles.emptyContainer}>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={styles.emptyText}>Restoring your conversation...</Text>
-          </View>
-        )}
-        {!restoringConversation && historyError && !historyVisible && (
-          <Text style={styles.historyError}>{historyError}</Text>
-        )}
-        {!restoringConversation && messages.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              Ask anything — your tasks, goals, or just how you're doing.
-            </Text>
-          </View>
-        )}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          renderItem={({ item }) => {
-            const isUser = item.role === 'user';
-            return (
-              <View style={[styles.bubbleContainer, isUser ? styles.userAlign : styles.aiAlign]}>
-                <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-                  <Text style={isUser ? styles.userText : styles.aiText}>{item.text}</Text>
-                  <Text
-                    style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}
-                  >
-                    {item.timestamp}
-                  </Text>
-                  {item.pendingActionId && item.pendingActionSummary && (
-                    <View style={styles.pendingActionBox}>
-                      <Text style={styles.pendingActionSummary}>{item.pendingActionSummary}</Text>
-                      {item.pendingActionStatus === 'pending' ? (
-                        <View style={styles.pendingActionButtons}>
-                          <Pressable
-                            disabled={sending}
-                            onPress={() =>
-                              decidePendingAction(item.id, item.pendingActionId!, true)
-                            }
-                          >
-                            <Text style={styles.confirmActionText}>Confirm</Text>
-                          </Pressable>
-                          <Pressable
-                            disabled={sending}
-                            onPress={() =>
-                              decidePendingAction(item.id, item.pendingActionId!, false)
-                            }
-                          >
-                            <Text style={styles.rejectActionText}>Reject</Text>
-                          </Pressable>
-                        </View>
-                      ) : (
-                        <Text style={styles.pendingActionStatus}>{item.pendingActionStatus}</Text>
-                      )}
-                    </View>
-                  )}
-                </View>
-              </View>
-            );
-          }}
-        />
-
-        {sending && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={styles.loadingText}>Ai is thinking...</Text>
-          </View>
-        )}
-
         <TouchableOpacity
-          style={[styles.summaryButton, sending && styles.disabledSummaryButton]}
-          onPress={handleEveningSummary}
-          disabled={sending}
+          onPress={openHistory}
+          disabled={sending || restoring}
+          accessibilityLabel="Conversation history"
+          style={{ padding: 8, marginRight: 4 }}
         >
-          <Text style={styles.summaryButtonText}>Get evening summary</Text>
+          <Ionicons name="time-outline" size={22} color="#fff" />
         </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => void newChat()}
+          disabled={sending}
+          accessibilityLabel="New chat"
+          style={{ padding: 8 }}
+        >
+          <Ionicons name="create-outline" size={22} color="#fff" />
+        </TouchableOpacity>
+      </View>
 
-        {/* Input Bar */}
-        <View style={styles.inputRow}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        {restoring ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={{ color: colors.textMuted, marginTop: 10 }}>Opening your conversation…</Text>
+          </View>
+        ) : messages.length === 0 ? (
+          <ChatEmptyState
+            firstName={firstName}
+            disabled={sending}
+            onPrompt={(text) => void send(text)}
+            onEveningSummary={() => void eveningSummary()}
+          />
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            renderItem={({ item, index }) => (
+              <ChatBubble
+                message={item}
+                showAvatar={lastAiIndex(index)}
+                busy={sending}
+                onConfirm={(m) => void decide(m, true)}
+                onReject={(m) => void decide(m, false)}
+                onRetry={retry}
+              />
+            )}
+            ListFooterComponent={sending ? <TypingIndicator /> : null}
+          />
+        )}
+
+        {messages.length > 0 && !sending && (
+          <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 6 }}>
+            <TouchableOpacity
+              onPress={() => void eveningSummary()}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: colors.primarySoft,
+                borderRadius: 14,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+              }}
+            >
+              <Ionicons name="moon-outline" size={14} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 12, marginLeft: 6 }}>Evening summary</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-end',
+            paddingHorizontal: 12,
+            paddingTop: 8,
+            paddingBottom: Math.max(insets.bottom, 10),
+            backgroundColor: colors.surface,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+          }}
+        >
           <TextInput
-            style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="Ask something..."
+            placeholder="Ask Elvyn anything…"
             placeholderTextColor={colors.textMuted}
             multiline
             maxLength={1000}
-            editable={!sending && !restoringConversation}
+            editable={!restoring}
+            style={{
+              flex: 1,
+              minHeight: 44,
+              maxHeight: 120,
+              color: colors.text,
+              backgroundColor: colors.background,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 22,
+              paddingHorizontal: 16,
+              paddingTop: 12,
+              paddingBottom: 12,
+              marginRight: 8,
+              fontSize: 15,
+            }}
           />
           <TouchableOpacity
-            style={[
-              styles.sendButton,
-              (!input.trim() || sending || restoringConversation) && styles.disabledSendButton,
-            ]}
-            onPress={handleSend}
-            disabled={!input.trim() || sending || restoringConversation}
+            onPress={() => void send(input)}
+            disabled={!canSend}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: canSend ? colors.primary : colors.border,
+            }}
           >
-            <Text style={styles.sendText}>Send</Text>
+            <Ionicons name="arrow-up" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
-        <Modal
-          visible={historyVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setHistoryVisible(false)}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.historyPanel}>
-              <View style={styles.historyHeader}>
-                <Text style={styles.historyTitle}>Conversation history</Text>
-                <Pressable onPress={() => setHistoryVisible(false)}>
-                  <Text style={styles.conversationActionText}>Close</Text>
-                </Pressable>
-              </View>
-              {loadingHistory ? (
-                <ActivityIndicator color={colors.primary} />
-              ) : historyError ? (
-                <Text style={styles.historyError}>{historyError}</Text>
-              ) : conversations.length === 0 ? (
-                <Text style={styles.emptyText}>No saved conversations yet.</Text>
-              ) : (
-                <FlatList
-                  data={conversations}
-                  keyExtractor={(item) => item.id}
-                  renderItem={({ item }) => (
-                    <Pressable style={styles.historyItem} onPress={() => selectConversation(item.id)}>
-                      <Text style={styles.historyItemTitle} numberOfLines={2}>{item.title}</Text>
-                      <Text style={styles.historyItemDate}>
-                        {new Date(item.updated_at).toLocaleString()}
-                      </Text>
-                    </Pressable>
-                  )}
-                />
-              )}
-            </View>
-          </View>
-        </Modal>
       </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
-}
 
-function makeStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    conversationActions: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-    conversationActionText: { color: colors.primary, fontWeight: '700' },
-    modalBackdrop: {
-      flex: 1,
-      justifyContent: 'flex-end',
-      backgroundColor: 'rgba(0,0,0,0.45)',
-    },
-    historyPanel: {
-      height: '70%',
-      backgroundColor: colors.surface,
-      borderTopLeftRadius: 18,
-      borderTopRightRadius: 18,
-      padding: 18,
-    },
-    historyHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 12,
-    },
-    historyTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
-    historyItem: { paddingVertical: 14, borderBottomWidth: 1, borderColor: colors.border },
-    historyItemTitle: { color: colors.text, fontWeight: '600' },
-    historyItemDate: { color: colors.textMuted, fontSize: 12, marginTop: 5 },
-    historyError: {
-      color: colors.danger,
-      backgroundColor: colors.surface,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-    },
-    pendingActionBox: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderColor: colors.border },
-    pendingActionSummary: { color: colors.text, fontWeight: '600' },
-    pendingActionButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-    confirmActionText: { color: colors.success, fontWeight: '700' },
-    rejectActionText: { color: colors.danger, fontWeight: '700' },
-    pendingActionStatus: {
-      color: colors.textMuted,
-      fontSize: 12,
-      marginTop: 8,
-      textTransform: 'capitalize',
-    },
-    list: { padding: 16, flexGrow: 1 },
-    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
-    emptyText: { color: colors.textMuted, textAlign: 'center', fontSize: 14, marginTop: 8 },
-    bubbleContainer: { borderRadius: 16, padding: 12, marginBottom: 10, maxWidth: '88%' },
-    userAlign: { backgroundColor: colors.primary, alignSelf: 'flex-end' },
-    aiAlign: {
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignSelf: 'flex-start',
-    },
-    userText: { color: '#FFFFFF', fontSize: 15, lineHeight: 21 },
-    aiText: { color: colors.text, fontSize: 15, lineHeight: 21 },
-    userTimestamp: { color: '#E0DEFF' },
-    aiTimestamp: { color: colors.textMuted },
-    summaryButton: {
-      padding: 12,
-      alignItems: 'center',
-      borderTopWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-    disabledSummaryButton: { opacity: 0.55 },
-    summaryButtonText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
-    inputRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-end',
-      padding: 12,
-      borderTopWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-    input: {
-      flex: 1,
-      minHeight: 44,
-      maxHeight: 120,
-      color: colors.text,
-      backgroundColor: colors.background,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 20,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      marginRight: 8,
-      fontSize: 16,
-      textAlignVertical: 'top',
-    },
-    sendButton: {
-      minHeight: 44,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      borderRadius: 22,
-      backgroundColor: colors.primary,
-    },
-    disabledSendButton: { backgroundColor: colors.border },
-    loadingContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: 10,
-      backgroundColor: colors.surface,
-      borderRadius: 8,
-      marginHorizontal: 16,
-      marginBottom: 8,
-    },
-    loadingText: { color: colors.text, marginLeft: 8 },
-    container: { flex: 1, backgroundColor: colors.background },
-    bubble: { borderRadius: 12, maxWidth: '100%' },
-    sendText: { color: '#FFFFFF', fontWeight: '700' },
-    userBubble: { backgroundColor: colors.primary },
-    aiBubble: { backgroundColor: colors.surface },
-    timestamp: { fontSize: 11, marginTop: 5 },
-  });
+      <HistorySheet
+        visible={historyVisible}
+        conversations={conversations}
+        activeId={conversationId}
+        loading={loadingHistory}
+        error={historyError}
+        onClose={() => setHistoryVisible(false)}
+        onSelect={(id) => void selectConversation(id)}
+        onNewChat={() => void newChat()}
+        onRetry={() => void loadHistory()}
+      />
+    </View>
+  );
 }
