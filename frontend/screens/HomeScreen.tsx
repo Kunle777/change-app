@@ -2,55 +2,50 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import ElvynMascot from '../components/ElvynMascot';
 import ProgressRing from '../components/home/progress_ring';
-import TaskActionSheet from '../components/tasks/TaskActionSheet';
-import RescheduleSheet from '../components/tasks/RescheduleSheet';
+import TaskActionsHost from '../components/tasks/TaskActionsHost';
 import TaskRow from '../components/tasks/TaskRow';
 import { getMyProfile } from '../services/users';
-import {
-  getTodayCheckinStatus,
-  submitEveningCheckin,
-  submitMorningCheckin,
-} from '../services/checkins';
-import {
-  cancelTask,
-  completeTask,
-  getTasksByDate,
-  getUndatedTasks,
-  notNowTask,
-  rescheduleTask,
-} from '../services/tasks';
+import { getTodayCheckinStatus, submitEveningCheckin, submitMorningCheckin } from '../services/checkins';
+import { completeTask, getTasksByDate, getUndatedTasks } from '../services/tasks';
 import { getEveningPrompt, getMorningPrompt } from './ElvynContextPrompt';
 import { useColors } from '../theme/colors';
 import type { Task } from '../types/task';
 
-const QUICK_MOODS = [
-  { label: 'Good', emoji: '🙂', value: 4 },
-  { label: 'Okay', emoji: '😐', value: 3 },
-  { label: 'Not great', emoji: '😕', value: 2 },
+const MOODS = [
+  { label: 'Good', emoji: '🙂', value: 4, tint: '#10B981' },
+  { label: 'Okay', emoji: '😐', value: 3, tint: '#F59E0B' },
+  { label: 'Not great', emoji: '🙁', value: 2, tint: '#EF4444' },
 ];
 
-// Local date, not UTC: toISOString() returns yesterday's date between 00:00 and 01:00 in Lagos.
-function localDateString(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+function localDateString(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
-function getTimeOfDay(): 'morning' | 'evening' {
-  return new Date().getHours() < 12 ? 'morning' : 'evening';
-}
-
+const getTimeOfDay = (): 'morning' | 'evening' => (new Date().getHours() < 12 ? 'morning' : 'evening');
 function getGreeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
 type CheckInStatus = { checkins_enabled: boolean; morning_done: boolean; evening_done: boolean };
+
+function IconTile({ name, color, bg }: { name: keyof typeof Ionicons.glyphMap; color: string; bg: string }) {
+  return (
+    <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
+      <Ionicons name={name} size={24} color={color} />
+    </View>
+  );
+}
+
+function Pill({ label, bg, color }: { label: string; bg: string; color: string }) {
+  return (
+    <View style={{ backgroundColor: bg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
+      <Text style={{ color, fontSize: 12, fontWeight: '600' }}>{label}</Text>
+    </View>
+  );
+}
 
 export default function HomeScreen({ navigation }: any) {
   const colors = useColors();
@@ -65,12 +60,10 @@ export default function HomeScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
-  const [rescheduleVisible, setRescheduleVisible] = useState(false);
 
   const timeOfDay = getTimeOfDay();
   const heroPrompt = timeOfDay === 'morning' ? getMorningPrompt() : getEveningPrompt();
-  const alreadyCheckedIn =
-    timeOfDay === 'morning' ? checkInStatus?.morning_done : checkInStatus?.evening_done;
+  const alreadyCheckedIn = timeOfDay === 'morning' ? checkInStatus?.morning_done : checkInStatus?.evening_done;
 
   const loadAll = useCallback(async () => {
     try {
@@ -80,33 +73,20 @@ export default function HomeScreen({ navigation }: any) {
         getTodayCheckinStatus(),
       ]);
       setFirstName(profile.first_name ?? '');
-      setTasks(todayTasks.filter((t: Task) => t.status !== 'cancelled'));
+      setTasks((todayTasks ?? []).filter((t: Task) => t.status !== 'cancelled'));
       setCheckInStatus(status);
       setUndatedTasksError(false);
-      void getUndatedTasks()
-        .then(setUndatedTasks)
-        .catch((error) => {
-          console.log('Undated tasks load failed:', error);
-          setUndatedTasksError(true);
-        });
+      void getUndatedTasks().then(setUndatedTasks).catch(() => setUndatedTasksError(true));
     } catch (error) {
       console.log('Home load failed:', error);
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadAll();
-    }, [loadAll]),
-  );
+  useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
 
   async function handleRefresh() {
     setRefreshing(true);
-    try {
-      await loadAll();
-    } finally {
-      setRefreshing(false);
-    }
+    try { await loadAll(); } finally { setRefreshing(false); }
   }
 
   async function handleQuickMood(mood: number) {
@@ -116,65 +96,71 @@ export default function HomeScreen({ navigation }: any) {
       if (timeOfDay === 'morning') await submitMorningCheckin(mood, '');
       else await submitEveningCheckin(mood, '', null);
       await loadAll();
-    } catch (error) {
-      console.log('Quick check-in failed:', error);
+    } catch (e) {
+      console.log('Quick check-in failed:', e);
     } finally {
       setCheckingIn(false);
     }
   }
 
   const total = tasks.length;
-  const completedCount = tasks.filter((t) => t.status === 'completed').length;
-  const percent = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+  const done = tasks.filter((t) => t.status === 'completed').length;
+  const remaining = total - done;
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
 
   const card = {
     backgroundColor: colors.surface,
     marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 16,
+    marginBottom: 14,
+    borderRadius: 20,
     padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
   } as const;
 
-  const taskHandlers = (item: Task) => ({
+  const handlers = (item: Task) => ({
     onPress: () => navigation.navigate('TaskDetail', { taskId: item.id }),
     onToggleComplete: () => completeTask(item.id).then(loadAll),
-    onMore: () => {
-      setActiveTask(item);
-      setSheetVisible(true);
-    },
+    onMore: () => { setActiveTask(item); setSheetVisible(true); },
   });
+
+  const title = { color: colors.text, fontWeight: '700', fontSize: 17 } as const;
+  const sub = { color: colors.textMuted, fontSize: 13, marginTop: 2 } as const;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
-        style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 24 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
       >
         {/* Hero */}
-        <View
-          style={{
-            backgroundColor: colors.heroBg,
-            paddingTop: insets.top + 12,
-            paddingHorizontal: 20,
-            paddingBottom: 56,
-            borderBottomLeftRadius: 28,
-            borderBottomRightRadius: 28,
-          }}
-        >
-          {/* Step 3: streak pill goes on the right of this row */}
-          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16, letterSpacing: 3 }}>ELVYN</Text>
+        <View style={{ backgroundColor: colors.heroBg, paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 56, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 }}>
+          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 17, letterSpacing: 4 }}>ELVYN</Text>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 20 }}>
-            <View style={{ flex: 1, paddingRight: 8 }}>
-              <Text style={{ color: '#E5E7EB', fontSize: 20 }}>{getGreeting()},</Text>
-              <Text style={{ color: '#fff', fontSize: 26, fontWeight: '800' }}>{firstName || 'there'}</Text>
-              <Text style={{ color: '#C4B5FD', fontSize: 14, lineHeight: 20, marginTop: 10 }}>{heroPrompt}</Text>
+          <Text style={{ color: '#C7C4E6', fontSize: 22, fontWeight: '400', marginTop: 26 }}>{getGreeting()},</Text>
+          <Text style={{ color: '#fff', fontSize: 34, fontWeight: '800', marginTop: 2 }} numberOfLines={1}>
+            {firstName || 'there'}
+          </Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginTop: 16 }}>
+            <View
+              style={{
+                flex: 1,
+                marginRight: 6,
+                backgroundColor: 'rgba(255,255,255,0.07)',
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.14)',
+                borderRadius: 18,
+                padding: 14,
+              }}
+            >
+              <Text style={{ color: '#A78BFA', fontSize: 30, fontWeight: '800', lineHeight: 30 }}>“</Text>
+              <Text style={{ color: '#EDEBFF', fontSize: 14, lineHeight: 21 }}>{heroPrompt}</Text>
+              <Text style={{ color: '#9C98C9', fontSize: 12, marginTop: 10 }}>— ELVYN</Text>
             </View>
-           <ElvynMascot variant="supportive" size={96} />
-
+            <View style={{ marginBottom: -4 }}>
+              <ElvynMascot variant="supportive" size={110} />
+            </View>
           </View>
         </View>
 
@@ -182,162 +168,156 @@ export default function HomeScreen({ navigation }: any) {
         <View
           style={{
             ...card,
-            marginTop: -32,
+            marginTop: -34,
             flexDirection: 'row',
             alignItems: 'center',
-            elevation: 3,
+            elevation: 4,
             shadowColor: '#000',
             shadowOpacity: 0.08,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 2 },
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 3 },
           }}
         >
           {total > 0 ? (
             <>
-              <ProgressRing
-                percent={percent}
-                color={colors.primary}
-                track={colors.primarySoft}
-                textColor={colors.text}
-              />
-              <View style={{ marginLeft: 16, flex: 1 }}>
-                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 16 }}>Today's Progress</Text>
-                <Text style={{ color: colors.textMuted, marginTop: 2 }}>
-                  {completedCount} of {total} tasks done
-                </Text>
+              <ProgressRing percent={percent} color={colors.primary} track={colors.primarySoft} textColor={colors.text} />
+              <View style={{ flex: 1, marginLeft: 16 }}>
+                <Text style={title}>Today's Progress</Text>
+                <Text style={sub}>{done} of {total} tasks completed</Text>
               </View>
+              {remaining > 0 && <Pill label={`${remaining} remaining`} bg={colors.primarySoft} color={colors.primary} />}
             </>
           ) : (
             <View>
-              <Text style={{ color: colors.text, fontWeight: '700', fontSize: 16 }}>Today's Progress</Text>
-              <Text style={{ color: colors.textMuted, marginTop: 2 }}>No tasks today. A clear day is okay.</Text>
+              <Text style={title}>Today's Progress</Text>
+              <Text style={sub}>No tasks today. A clear day is okay.</Text>
             </View>
           )}
         </View>
 
         {/* Brain Dump */}
-        <TouchableOpacity onPress={() => navigation.navigate('BrainDump')} style={card}>
-          <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15 }}>What's on your mind?</Text>
-          <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4, lineHeight: 18 }}>
-            Capture ideas, tasks, or anything on your mind. Elvyn will help you turn it into action.
-          </Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('BrainDump')}
+          style={{ ...card, backgroundColor: colors.lavenderSurface, flexDirection: 'row', alignItems: 'center' }}
+        >
+          <IconTile name="bulb-outline" color={colors.primary} bg={colors.primarySoft} />
+          <View style={{ flex: 1, marginLeft: 14, marginRight: 8 }}>
+            <Text style={title}>Brain Dump</Text>
+            <Text style={{ color: colors.text, fontSize: 14, marginTop: 2 }}>What's on your mind?</Text>
+            <Text style={{ ...sub, lineHeight: 18 }}>Capture ideas, tasks, or anything. Elvyn will help you turn it into action.</Text>
+          </View>
+          <View style={{ backgroundColor: colors.primarySoft, borderRadius: 999, padding: 10 }}>
+            <Ionicons name="mic-outline" size={20} color={colors.primary} />
+          </View>
         </TouchableOpacity>
 
-        {/* Check-in: hidden entirely when check-ins are turned off */}
+        {/* Check-in */}
         {checkInStatus?.checkins_enabled && (
-          <View style={{ ...card, backgroundColor: colors.warmSurface }}>
-            {alreadyCheckedIn ? (
-              <Text style={{ color: colors.success, fontWeight: '700' }}>✓ Checked in</Text>
-            ) : (
-              <>
-                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15 }}>
-                  How are you {timeOfDay === 'morning' ? 'this morning' : 'this evening'}?
+          <View style={{ ...card, backgroundColor: colors.warmSurface, borderColor: colors.warmBorder }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <IconTile name="happy-outline" color="#F59E0B" bg={colors.surface} />
+              <View style={{ marginLeft: 14, flex: 1 }}>
+                <Text style={title}>Check-in</Text>
+                <Text style={sub}>
+                  {alreadyCheckedIn
+                    ? 'You checked in today. Nice.'
+                    : `How are you feeling this ${timeOfDay === 'morning' ? 'morning' : 'evening'}?`}
                 </Text>
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                  {QUICK_MOODS.map((m) => (
+              </View>
+              {alreadyCheckedIn && <Ionicons name="checkmark-circle" size={26} color={colors.success} />}
+            </View>
+
+            {!alreadyCheckedIn && (
+              <>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+                  {MOODS.map((m) => (
                     <TouchableOpacity
                       key={m.label}
                       disabled={checkingIn}
                       onPress={() => handleQuickMood(m.value)}
                       style={{
                         flex: 1,
-                        paddingVertical: 10,
-                        borderRadius: 12,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        paddingVertical: 9,
+                        borderRadius: 14,
+                        backgroundColor: colors.surface,
                         borderWidth: 1,
                         borderColor: colors.warmBorder,
-                        backgroundColor: colors.surface,
-                        alignItems: 'center',
                         opacity: checkingIn ? 0.6 : 1,
                       }}
                     >
-                      <Text style={{ fontSize: 18 }}>{m.emoji}</Text>
-                      <Text style={{ fontSize: 12, color: colors.text, marginTop: 2 }}>{m.label}</Text>
+                      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: `${m.tint}22`, alignItems: 'center', justifyContent: 'center', marginRight: 6 }}>
+                        <Text style={{ fontSize: 14 }}>{m.emoji}</Text>
+                      </View>
+                      <Text style={{ color: colors.text, fontSize: 12, fontWeight: '500' }}>{m.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('CheckIn', { type: timeOfDay })}
-                  style={{ marginTop: 12 }}
-                >
-                  <Text style={{ color: colors.primary, fontWeight: '600' }}>Check in →</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('CheckIn', { type: timeOfDay })} style={{ marginTop: 12 }}>
+                  <Text style={{ color: colors.primary, fontWeight: '600' }}>Add more detail →</Text>
                 </TouchableOpacity>
               </>
             )}
           </View>
         )}
 
-        {/* Calendar: the single entry point, sits directly above Today's Tasks */}
+        {/* Calendar (single entry point) */}
         <TouchableOpacity
           onPress={() => navigation.navigate('Calendar')}
-          style={{ ...card, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+          style={{ ...card, flexDirection: 'row', alignItems: 'center' }}
         >
-          <Text style={{ color: colors.text, fontWeight: '600' }}>
-            Today, {new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-          </Text>
-          <Text style={{ color: colors.primary }}>View calendar →</Text>
+          <IconTile name="calendar-outline" color={colors.primary} bg={colors.primarySoft} />
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={title}>Calendar</Text>
+            <Text style={sub}>Today • {new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Text>
+          </View>
+          <Text style={{ color: colors.primary, fontWeight: '600' }}>View calendar →</Text>
         </TouchableOpacity>
 
         {/* Today's Tasks */}
         <View style={card}>
-          <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>
-            Today's Tasks
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+            <IconTile name="list-outline" color={colors.primary} bg={colors.primarySoft} />
+            <Text style={{ ...title, flex: 1, marginLeft: 14 }}>Today's Tasks</Text>
+            {remaining > 0 && <Pill label={`${remaining} left`} bg={colors.primarySoft} color={colors.primary} />}
+          </View>
+
           {tasks.length === 0 ? (
-            <Text style={{ color: colors.textMuted, paddingVertical: 12 }}>No tasks today.</Text>
+            <Text style={{ color: colors.textMuted, paddingVertical: 14 }}>No tasks today.</Text>
           ) : (
-            tasks.map((item) => <TaskRow key={item.id} task={item} {...taskHandlers(item)} />)
+            tasks.map((item) => <TaskRow key={item.id} task={item} {...handlers(item)} />)
           )}
+
           <TouchableOpacity
             onPress={() => navigation.navigate('CreateTask')}
-            style={{
-              backgroundColor: colors.primary,
-              borderRadius: 12,
-              padding: 14,
-              alignItems: 'center',
-              marginTop: 12,
-            }}
+            style={{ backgroundColor: colors.primary, borderRadius: 14, padding: 15, alignItems: 'center', marginTop: 14 }}
           >
-            <Text style={{ color: '#fff', fontWeight: '600' }}>+ Create task</Text>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>+ Create task</Text>
           </TouchableOpacity>
         </View>
 
-        {/* To-do (no date): refined in step 4 */}
+        {/* To-do (no date) */}
         {(undatedTasks.length > 0 || undatedTasksError) && (
           <View style={card}>
-            <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15, marginBottom: 4 }}>
-              To-do <Text style={{ fontSize: 12, color: colors.textMuted }}>(no date)</Text>
+            <Text style={{ ...title, marginBottom: 4 }}>
+              To-do <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '400' }}>(no date)</Text>
             </Text>
             {undatedTasksError && (
-              <Text style={{ color: colors.textMuted, paddingVertical: 8 }}>
-                Couldn't load your to-do list. Pull down to try again.
-              </Text>
+              <Text style={{ color: colors.textMuted, paddingVertical: 8 }}>Couldn't load your to-do list. Pull down to try again.</Text>
             )}
-            {undatedTasks.map((item) => (
-              <TaskRow key={item.id} task={item} {...taskHandlers(item)} />
-            ))}
+            {undatedTasks.map((item) => <TaskRow key={item.id} task={item} {...handlers(item)} />)}
           </View>
         )}
       </ScrollView>
 
-      <TaskActionSheet
+      <TaskActionsHost
+        task={activeTask}
         visible={sheetVisible}
         onClose={() => setSheetVisible(false)}
-        onMarkDone={() => activeTask && completeTask(activeTask.id).then(loadAll)}
-        onNotNow={() => activeTask && notNowTask(activeTask.id, 'later_today').then(loadAll)}
-        onReschedule={() => setRescheduleVisible(true)}
-        onEdit={() => activeTask && navigation.navigate('CreateTask', { taskId: activeTask.id })}
-        onCancel={() => activeTask && cancelTask(activeTask.id).then(loadAll)}
-      />
-      <RescheduleSheet
-        visible={rescheduleVisible}
-        task={activeTask}
-        onClose={() => setRescheduleVisible(false)}
-        onSave={async (dueDate, reminderTime) => {
-          if (activeTask) {
-            await rescheduleTask(activeTask.id, dueDate, reminderTime);
-            await loadAll();
-          }
-        }}
+        onChanged={loadAll}
+        navigation={navigation}
       />
     </View>
   );

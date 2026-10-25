@@ -16,6 +16,7 @@ from app.ai.schemas import (
 from app.ai import service
 from app.ai import action_service
 from app.ai import gemini
+from app.memory.policy import ai_processing_allowed
 from app.ai.prompt_builder import build_system_prompt_for_user
 from app.checkins import service as checkin_service
 
@@ -32,6 +33,12 @@ async def chat_with_ai_route(
     current_user: User = Depends(get_current_user),
 ):
 
+    access = await ai_processing_allowed(db, current_user.id)
+    if not access.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="AI features are turned off for this account",
+        )
     if not await service.check_usage(db, current_user.id):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily AI limit reached")
     try:
@@ -105,6 +112,12 @@ async def evening_summary_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    access = await ai_processing_allowed(db, current_user.id)
+    if not access.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="AI features are turned off for this account",
+        )
     if not await service.check_usage(db, current_user.id):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily AI limit reached")
 

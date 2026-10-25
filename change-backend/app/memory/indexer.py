@@ -4,8 +4,10 @@ import uuid
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.models import AIInteraction
 from app.braindump.models import BrainDump
 from app.checkins.models import CheckIn
+from app.memory.sources import CONVERSATION_SOURCE
 from app.memory.config import EMBEDDING_DIM, EMBEDDING_MODEL
 from app.memory.embedding import embed_texts
 from app.memory.models import MemoryChunk
@@ -174,7 +176,11 @@ async def index_source(
 
 
 def _ai_enabled_for(table_name: str):
-    if table_name not in {BrainDump.__tablename__, CheckIn.__tablename__}:
+    if table_name not in {
+        BrainDump.__tablename__,
+        CheckIn.__tablename__,
+        AIInteraction.__tablename__,
+    }:
         raise ValueError("Unsupported memory source table")
     return text(
         "EXISTS (SELECT 1 FROM users u LEFT JOIN feature_entitlements fe ON fe.user_id = u.id "
@@ -192,6 +198,8 @@ async def delete_orphans(db: AsyncSession) -> int:
                      (SELECT 1 FROM {BrainDump.__tablename__} b WHERE b.id = m.source_id))
                OR (m.source_type = 'check_in' AND NOT EXISTS
                      (SELECT 1 FROM {CheckIn.__tablename__} c WHERE c.id = m.source_id))
+               OR (m.source_type = 'conversation_user' AND NOT EXISTS
+                     (SELECT 1 FROM {AIInteraction.__tablename__} i WHERE i.id = m.source_id))
             """
         )
     )
@@ -225,8 +233,11 @@ async def reembed_stale_model_chunks(
         await db.execute(
             text(
                 "SELECT mc.id, mc.content FROM memory_chunks mc "
-                "JOIN feature_entitlements fe ON fe.user_id = mc.user_id "
-                "WHERE mc.embedding_model <> :model AND fe.ai_enabled IS TRUE "
+                "JOIN users u ON u.id = mc.user_id "
+                "LEFT JOIN feature_entitlements fe ON fe.user_id = mc.user_id "
+                "WHERE mc.embedding_model <> :model "
+                "AND u.personal_memory_enabled IS TRUE "
+                "AND COALESCE(fe.ai_enabled, TRUE) IS TRUE "
                 "ORDER BY mc.created_at LIMIT :limit"
             ),
             {"model": EMBEDDING_MODEL, "limit": limit},
@@ -335,12 +346,40 @@ async def sweep_memory_index(
         )
     ).all()
 
+    first_conversation = and_(
+        MemoryChunk.source_type == CONVERSATION_SOURCE,
+        MemoryChunk.source_id == AIInteraction.id,
+        MemoryChunk.user_id == AIInteraction.user_id,
+        MemoryChunk.chunk_index == 0,
+    )
+    conversations = (
+        await db.execute(
+            select(AIInteraction.id, AIInteraction.user_id)
+            .select_from(AIInteraction)
+            .outerjoin(MemoryChunk, first_conversation)
+            .where(
+                func.length(func.trim(AIInteraction.question)) >= 40,
+                _ai_enabled_for(AIInteraction.__tablename__),
+                or_(
+                    MemoryChunk.id.is_(None),
+                    MemoryChunk.created_at
+                    < text("now() - interval '15 minutes'"),
+                ),
+            )
+            .order_by(AIInteraction.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+
     work = [
         ("brain_dump", row.id, row.user_id)
         for row in dumps
     ] + [
         ("check_in", row.id, row.user_id)
         for row in check_ins
+    ] + [
+        (CONVERSATION_SOURCE, row.id, row.user_id)
+        for row in conversations
     ]
 
     consecutive_failures = 0
