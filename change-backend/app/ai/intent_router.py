@@ -111,7 +111,9 @@ _ACTION_CUE = re.compile(
     r"(^|\b(please|can you|could you|would you|i want you to|i need you to)\s+)"
     r"(add|create|make|set up|schedule|remind|reschedule|move|push|change|update|"
     r"cancel|delete|remove|rename|bump)\b|\bremind me\b|\badd (a |an |this |it )?"
-    r"(task|reminder|to my)\b",
+    r"(task|reminder|to my)\b"
+    r"|\bput (it|this|that)\b.{0,20}\b(list|tasks?)\b"
+    r"|\bdon'?t let me forget\b|\bnote (this|that) down\b|\bwrite (this|that) down\b",
     re.I,
 )
 _STOP_WORDS = frozenset(
