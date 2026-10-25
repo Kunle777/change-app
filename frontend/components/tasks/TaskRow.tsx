@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, View, Text, TouchableOpacity } from 'react-native';
 import { Task } from '../../types/task';
 import { useColors } from '../../theme/colors';
 import { isTaskOverdue } from '../../utils/taskDates';
@@ -19,6 +20,15 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
   };
   const isDone = task.status === 'completed';
   const isOverdue = isTaskOverdue(task.due_date, task.status);
+  const scale = useRef(new Animated.Value(1)).current;
+  const wasDone = useRef(isDone);
+  useEffect(() => {
+    if (isDone && !wasDone.current) {
+      scale.setValue(0.6);
+      Animated.spring(scale, { toValue: 1, friction: 4, tension: 160, useNativeDriver: true }).start();
+    }
+    wasDone.current = isDone;
+  }, [isDone, scale]);
 
   return (
     <TouchableOpacity
@@ -33,10 +43,14 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
     >
       <TouchableOpacity
         onPress={onToggleComplete}
+        disabled={isDone}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel={isDone ? 'Task done' : 'Mark task done'}
         style={{
-          width: 22,
-          height: 22,
-          borderRadius: 11,
+          width: 26,
+          height: 26,
+          borderRadius: 13,
           borderWidth: 2,
           borderColor: isDone ? colors.success : colors.border,
           backgroundColor: isDone ? colors.success : 'transparent',
@@ -45,7 +59,11 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
           marginRight: 12,
         }}
       >
-        {isDone && <Text style={{ color: colors.surface, fontSize: 12 }}>✓</Text>}
+        {isDone && (
+          <Animated.Text style={{ color: '#fff', fontSize: 14, fontWeight: '800', transform: [{ scale }] }}>
+            ✓
+          </Animated.Text>
+        )}
       </TouchableOpacity>
 
       <View style={{ flex: 1 }}>
@@ -92,17 +110,6 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
           )}
         </View>
       </View>
-
-      <TouchableOpacity
-        onPress={onToggleComplete}
-        accessibilityRole="button"
-        accessibilityLabel={isDone ? 'Mark task incomplete' : 'Mark task done'}
-        style={{ padding: 6, marginRight: 4 }}
-      >
-        <Text style={{ fontSize: 20, color: isDone ? '#10B981' : '#4F46E5' }}>
-          {isDone ? '✓' : '→'}
-        </Text>
-      </TouchableOpacity>
 
       <TouchableOpacity onPress={onMore} style={{ padding: 6 }}>
         <Text style={{ fontSize: 18, color: colors.textMuted }}>⋮</Text>
