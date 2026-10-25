@@ -15,6 +15,7 @@ export const lightColors = {
   primarySoft: '#EEF0FF',
   warmSurface: '#FFF7ED',
   warmBorder: '#E5C99B',
+  lavenderSurface: '#F5F3FF',
 } as const;
 
 export const darkColors = {
@@ -32,6 +33,7 @@ export const darkColors = {
   primarySoft: '#1E1B4B',
   warmSurface: '#2A2218',
   warmBorder: '#5C4A2B',
+  lavenderSurface: '#1B1840',
 } as const;
 
 export type ThemeColors = { [Key in keyof typeof lightColors]: string };
