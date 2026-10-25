@@ -93,3 +93,28 @@ class TitleMatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FollowUpTests(unittest.TestCase):
+    def test_short_follow_up_inherits_previous_sources(self):
+        p = plan_sources(
+            "and the week before?",
+            previous_question="What did I write about my portfolio last week?",
+            task_titles=TITLES,
+        )
+        self.assertTrue(p.need_memory)
+
+    def test_follow_up_never_inherits_an_action(self):
+        p = plan_sources("and tomorrow?", previous_question="Add a task to call mum", task_titles=TITLES)
+        self.assertFalse(p.action_intent)
+
+    def test_unrelated_long_message_does_not_inherit(self):
+        p = plan_sources(
+            "Tell me something encouraging about how my day is going so far",
+            previous_question="What did I write about my portfolio last week?",
+        )
+        self.assertFalse(p.need_memory)
+
+    def test_out_of_scope_previous_turn_is_not_inherited(self):
+        p = plan_sources("and then?", previous_question="write me a python script")
+        self.assertFalse(p.need_memory or p.need_tasks)

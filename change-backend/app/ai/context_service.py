@@ -175,7 +175,6 @@ async def assemble_coaching_context(
 ) -> CoachingContext:
     intent = detect_intent(message)
     titles = [] if intent == "out_of_scope" else await load_open_task_titles(db, user_id)
-    plan = plan_sources(message, intent, task_titles=titles)
     user_timezone = await resolve_user_timezone(db, user_id, timezone_name)
     local_date = datetime.now(user_timezone).date().isoformat()
     freshness = await compute_data_freshness(db, user_id, user_timezone.key)
@@ -188,6 +187,9 @@ async def assemble_coaching_context(
     history = _history_lines(turns)
     history_ids = [turn.id for turn in turns]
     previous_question = turns[-1].question if turns else None
+    plan = plan_sources(
+        message, intent, task_titles=titles, previous_question=previous_question
+    )
 
     tasks = TaskFacts("not_needed", "")
     behavior = BehaviorFacts("not_needed", "")

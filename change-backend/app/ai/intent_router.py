@@ -197,11 +197,22 @@ def detect_intent(message: str) -> str:
     return "general_coaching"
 
 
+_FOLLOW_UP = re.compile(
+    r"^(and|but|so|what about|how about|why|what else|more|that|those|it|they|then|also)\b", re.I
+)
+
+
+def is_follow_up(message: str) -> bool:
+    text = (message or "").strip()
+    return bool(text) and (len(text.split()) <= 5 or bool(_FOLLOW_UP.match(text)))
+
+
 def plan_sources(
     question: str,
     intent: str | None = None,
     *,
     task_titles: "Iterable[str]" = (),
+    previous_question: str | None = None,
 ) -> SourcePlan:
     """Select context sources independently from cues in the message.
 
@@ -251,7 +262,7 @@ def plan_sources(
         if not recall_like:
             memory_types = ("check_in", "brain_dump")
 
-    return SourcePlan(
+    plan = SourcePlan(
         intent=intent,
         need_tasks=need_tasks,
         need_events=need_events,
@@ -260,3 +271,18 @@ def plan_sources(
         memory_source_types=memory_types,
         action_intent=action,
     )
+    if previous_question and is_follow_up(text):
+        # A short follow-up ("and the week before?") continues the previous topic, so it
+        # inherits that turn's SOURCES. It never inherits an action request.
+        previous = plan_sources(previous_question, task_titles=task_titles)
+        if previous.intent != "out_of_scope":
+            plan = SourcePlan(
+                intent=intent,
+                need_tasks=plan.need_tasks or previous.need_tasks,
+                need_events=plan.need_events or previous.need_events,
+                need_behavior=plan.need_behavior or previous.need_behavior,
+                need_memory=plan.need_memory or previous.need_memory,
+                memory_source_types=plan.memory_source_types or previous.memory_source_types,
+                action_intent=action,
+            )
+    return plan
