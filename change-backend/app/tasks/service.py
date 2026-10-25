@@ -567,21 +567,23 @@ async def cancel_task(
     return task
 
 
-async def get_task_dates_for_month(db: AsyncSession, user_id, year: int, month: int) -> list[str]:
-    start = date(year, month, 1)
-    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+async def get_task_dates_for_month(
+    db: AsyncSession, user_id, year: int, month: int, timezone_name: str | None = None
+) -> list[str]:
+    start_day = date(year, month, 1)
+    end_day = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    start = _local_day_start_utc(timezone_name, start_day)
+    end = _local_day_start_utc(timezone_name, end_day)
     result = await db.execute(
-        select(func.date(Task.due_date))
-        .where(
+        select(Task.due_date).where(
             Task.user_id == user_id,
             Task.is_deleted.is_(False),
             Task.due_date >= start,
             Task.due_date < end,
         )
-        .distinct()
     )
-    rows = result.scalars().all()
-    return sorted({row.isoformat() if hasattr(row, "isoformat") else str(row) for row in rows})
+    zone = ZoneInfo(timezone_name or "Africa/Lagos")
+    return sorted({_utc(d).astimezone(zone).date().isoformat() for d in result.scalars().all() if d})
 
 
 async def get_tasks_for_date(
@@ -604,12 +606,12 @@ async def get_tasks_for_date(
         Task.due_date < end,
     )
     if status_filter == "incomplete":
-        query = query.where(Task.status == StatusEnum.pending)
+        query = query.where(Task.status.in_([StatusEnum.pending, StatusEnum.in_progress]))
     elif status_filter == "completed":
         query = query.where(Task.status == StatusEnum.completed)
     elif status_filter == "overdue":
         query = query.where(
-            Task.status == StatusEnum.pending,
+            Task.status.in_([StatusEnum.pending, StatusEnum.in_progress]),
             Task.due_date < _local_day_start_utc(timezone_name),
         )
     query = query.order_by(Task.status, Task.reminder_time)

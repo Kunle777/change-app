@@ -11,10 +11,15 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onChanged: () => void;
+  /** Optimistic completion from the parent; falls back to a plain API call. */
+  onMarkDone?: (task: Task) => void;
   navigation: any;
 };
 
-export default function TaskActionsHost({ task, visible, onClose, onChanged, navigation }: Props) {
+// Android can't reliably open one Modal while another is still closing.
+const MODAL_GAP_MS = 300;
+
+export default function TaskActionsHost({ task, visible, onClose, onChanged, onMarkDone, navigation }: Props) {
   const [notNowVisible, setNotNowVisible] = useState(false);
   const [rescheduleVisible, setRescheduleVisible] = useState(false);
 
@@ -45,11 +50,15 @@ export default function TaskActionsHost({ task, visible, onClose, onChanged, nav
       <TaskActionsSheet
         visible={visible}
         onClose={onClose}
-        onMarkDone={() => task && void run(() => completeTask(task.id))}
-        onNotNow={() => setNotNowVisible(true)}
-        onReschedule={() => setRescheduleVisible(true)}
-        onEdit={() => task && navigation.navigate('CreateTask', { taskId: task.id })}
-        onCancel={confirmCancel}
+        onMarkDone={() => {
+          if (!task) return;
+          if (onMarkDone) onMarkDone(task);
+          else void run(() => completeTask(task.id));
+        }}
+        onNotNow={() => setTimeout(() => setNotNowVisible(true), MODAL_GAP_MS)}
+        onReschedule={() => setTimeout(() => setRescheduleVisible(true), MODAL_GAP_MS)}
+        onEdit={() => task && setTimeout(() => navigation.navigate('CreateTask', { taskId: task.id }), 100)}
+        onCancel={() => setTimeout(confirmCancel, MODAL_GAP_MS)}
       />
       <NotNowSheet
         visible={notNowVisible}

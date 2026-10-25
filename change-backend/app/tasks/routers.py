@@ -112,7 +112,9 @@ async def calendar_dates(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    dates = await service.get_task_dates_for_month(db, current_user.id, year, month)
+    dates = await service.get_task_dates_for_month(
+        db, current_user.id, year, month, current_user.last_active_timezone
+    )
     return {"dates": dates}
 
 
