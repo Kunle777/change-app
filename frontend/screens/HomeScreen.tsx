@@ -9,7 +9,9 @@ import TaskActionsHost from '../components/tasks/TaskActionsHost';
 import TaskRow from '../components/tasks/TaskRow';
 import { getMyProfile } from '../services/users';
 import { getTodayCheckinStatus, submitEveningCheckin, submitMorningCheckin } from '../services/checkins';
-import { completeTask, getTasksByDate, getUndatedTasks } from '../services/tasks';
+import { getTasksByDate, getUndatedTasks } from '../services/tasks';
+import { useTaskCompletion } from '../hooks/useTaskCompletion';
+import { localDateString } from '../utils/localDate';
 import { getEveningPrompt, getMorningPrompt } from './ElvynContextPrompt';
 import { useColors } from '../theme/colors';
 import type { Task } from '../types/task';
@@ -20,9 +22,6 @@ const MOODS = [
   { label: 'Not great', emoji: '🙁', value: 2, tint: '#EF4444' },
 ];
 
-function localDateString(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 const getTimeOfDay = (): 'morning' | 'evening' => (new Date().getHours() < 12 ? 'morning' : 'evening');
 function getGreeting() {
   const h = new Date().getHours();
@@ -84,6 +83,9 @@ export default function HomeScreen({ navigation }: any) {
 
   useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
 
+  const reload = useCallback(() => { void loadAll(); }, [loadAll]);
+  const completeOptimistically = useTaskCompletion([setTasks, setUndatedTasks], reload);
+
   async function handleRefresh() {
     setRefreshing(true);
     try { await loadAll(); } finally { setRefreshing(false); }
@@ -120,7 +122,7 @@ export default function HomeScreen({ navigation }: any) {
 
   const handlers = (item: Task) => ({
     onPress: () => navigation.navigate('TaskDetail', { taskId: item.id }),
-    onToggleComplete: () => completeTask(item.id).then(loadAll),
+    onToggleComplete: () => completeOptimistically(item),
     onMore: () => { setActiveTask(item); setSheetVisible(true); },
   });
 
@@ -316,7 +318,8 @@ export default function HomeScreen({ navigation }: any) {
         task={activeTask}
         visible={sheetVisible}
         onClose={() => setSheetVisible(false)}
-        onChanged={loadAll}
+        onChanged={reload}
+        onMarkDone={completeOptimistically}
         navigation={navigation}
       />
     </View>
