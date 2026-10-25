@@ -23,8 +23,17 @@ async def handle_tool_call(
     conversation_id: uuid.UUID,
     tool_name: str,
     arguments: dict,
+    *,
+    force_confirmation: bool = False,
 ) -> dict:
-    if tool_name in CONFIRMATION_REQUIRED_TOOLS:
+    """Run one model-proposed tool call.
+
+    `force_confirmation` stages even auto-execute tools (create_task) as pending actions.
+    It is set when untrusted context (saved entries, earlier-chat excerpts) was injected.
+    """
+    if tool_name in CONFIRMATION_REQUIRED_TOOLS or (
+        force_confirmation and tool_name in AUTO_EXECUTE_TOOLS
+    ):
         try:
             validated = await validate_confirmation_tool(db, user, tool_name, arguments)
         except ValueError as error:

@@ -382,6 +382,7 @@ async def handle_chat(
                 conversation_id=conversation.id,
                 tool_name=tool_name,
                 arguments=arguments,
+                force_confirmation=coaching.require_confirmation,
             )
             if outcome.get("status") == "awaiting_confirmation":
                 pending_action_id = UUID(outcome["pending_action_id"])

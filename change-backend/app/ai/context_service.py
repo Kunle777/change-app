@@ -10,12 +10,12 @@ from app.ai.behavior import BehaviorFacts, load_behavior_observations
 from app.ai.freshness_service import DataFreshness, compute_data_freshness, resolve_user_timezone
 from app.ai.intent_router import SourcePlan, detect_intent, plan_sources
 from app.ai.prompt_builder import build_system_prompt
+from app.ai.tool_policy import CONFIRMATION_PROMPT_NOTE, decide_tools
 from app.ai.context_budget import Block, fit_blocks, omission_note
 from app.ai.task_context import TaskFacts, load_open_task_titles, load_task_facts, render_groups
 from app.ai.models import AIInteraction
 from app.memory.retrieval import (
     RetrievalResult,
-    memory_allows_tools,
     memory_prompt_section,
     retrieve_memories,
     sanitize_for_prompt,
@@ -43,6 +43,7 @@ class CoachingContext:
     tasks: TaskFacts
     behavior: BehaviorFacts
     allow_tools: bool
+    require_confirmation: bool = False
     memory_sources: list[dict] = field(default_factory=list)
     context_used: str = ""
     conversation_id: UUID | None = None
@@ -224,7 +225,10 @@ async def assemble_coaching_context(
     history, memory, tasks_prompt, behavior, note = apply_context_budget(
         history, memory, tasks, behavior
     )
+    tool_decision = decide_tools(plan, memory)
     structured = _assemble_task_section(tasks, behavior, tasks_prompt)
+    if tool_decision.offer_tools and tool_decision.require_confirmation:
+        structured = f"{structured}\n\n{CONFIRMATION_PROMPT_NOTE}"
     if note:
         structured = f"{structured}\n\n{note}"
     extra = memory_prompt_section(memory, tz_name=timezone_name)
@@ -249,7 +253,8 @@ async def assemble_coaching_context(
         memory=memory,
         tasks=tasks,
         behavior=behavior,
-        allow_tools=memory_allows_tools(memory),
+        allow_tools=tool_decision.offer_tools,
+        require_confirmation=tool_decision.require_confirmation,
         memory_sources=sources,
         context_used=context_used,
         conversation_id=conversation_id,
