@@ -1,29 +1,51 @@
-import { View, TouchableOpacity, Text } from 'react-native';
+import { Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useColors } from '../../theme/colors';
 
-const CHIPS = [
-  "How's my week looking?",
-  'What should I focus on?',
-  "I'm stuck on a task",
-  'Why do I keep postponing things?',
+// Worded to match what Elvyn can actually answer from the user's own data.
+const CHIPS: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
+  { icon: 'list-outline', text: "What's on my plate today?" },
+  { icon: 'calendar-outline', text: 'Help me plan my day' },
+  { icon: 'time-outline', text: 'What have I been putting off?' },
+  { icon: 'heart-outline', text: 'How have I been feeling lately?' },
 ];
 
-export default function AIPromptChips({ onSelect }: { onSelect: (text: string) => void }) {
+export default function AIPromptChips({ onSelect, disabled }: { onSelect: (text: string) => void; disabled?: boolean }) {
+  const colors = useColors();
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
       {CHIPS.map((chip) => (
         <TouchableOpacity
-          key={chip}
-          onPress={() => onSelect(chip)}
+          key={chip.text}
+          disabled={disabled}
+          onPress={() => onSelect(chip.text)}
+          accessibilityRole="button"
           style={{
+            width: '48.5%',
+            backgroundColor: colors.surface,
             borderWidth: 1,
-            borderColor: '#ddd',
-            borderRadius: 12,
-            paddingVertical: 10,
-            paddingHorizontal: 14,
-            width: '47%',
+            borderColor: colors.border,
+            borderRadius: 16,
+            padding: 12,
+            marginBottom: 10,
+            minHeight: 78,
+            opacity: disabled ? 0.6 : 1,
           }}
         >
-          <Text style={{ fontSize: 13 }}>✦ {chip}</Text>
+          <View
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              backgroundColor: colors.primarySoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 8,
+            }}
+          >
+            <Ionicons name={chip.icon} size={18} color={colors.primary} />
+          </View>
+          <Text style={{ color: colors.text, fontSize: 13, fontWeight: '600' }}>{chip.text}</Text>
         </TouchableOpacity>
       ))}
     </View>
