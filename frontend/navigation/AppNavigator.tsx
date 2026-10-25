@@ -27,7 +27,7 @@ export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   ForgotPassword: undefined;
-  ResetPassword: undefined;
+  ResetPassword: { error?: string } | undefined;
   CountryConfirm: undefined;
   ChangePassword: undefined;
   TaskDetail: { taskId: string };
@@ -96,11 +96,6 @@ function MainTabs() {
   );
 }
 
-function ResetPasswordWrapper() {
-  const navigation = useNavigation<any>();
-  return <ResetPasswordScreen onComplete={() => navigation.navigate('Login')} />;
-}
-
 export default function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -114,13 +109,12 @@ export default function AppNavigator() {
       />
       <Stack.Screen
         name="ResetPassword"
-        options={{ presentation: 'modal', headerShown: true, title: 'Reset Password' }}
-        component={ResetPasswordWrapper}
+        options={{ presentation: 'modal', gestureEnabled: false }}
+        component={ResetPasswordScreen}
       />
       <Stack.Screen
         name="ChangePassword"
         component={ChangePasswordScreen}
-        options={{ headerShown: true, title: 'Change Password' }}
       />
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="WinLog" component={WinLogScreen} options={{ headerShown: true, title: "Win Log" }} />
