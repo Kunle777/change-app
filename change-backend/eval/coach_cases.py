@@ -20,7 +20,7 @@ CASES = [
     dict(
         group="multi_source", name="current_tasks",
         scenario=Scenario("What tasks am I currently working on?", open_titles=TITLES),
-        must_contain=["Finish portfolio website", "Pay electricity bill"],
+        must_contain=["Finish portfolio website", "Pay electricity bill", "no task tools are available"],
         must_not_contain=["<saved_entries>"],
         tools=(False, False),
     ),

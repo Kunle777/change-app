@@ -15,7 +15,7 @@ from app.ai.behavior import (
 from app.ai.freshness_service import DataFreshness, compute_data_freshness, resolve_user_timezone
 from app.ai.intent_router import SourcePlan, detect_intent, plan_sources
 from app.ai.prompt_builder import build_system_prompt
-from app.ai.tool_policy import CONFIRMATION_PROMPT_NOTE, decide_tools
+from app.ai.tool_policy import CONFIRMATION_PROMPT_NOTE, TOOLS_UNAVAILABLE_NOTE, decide_tools
 from app.ai.context_budget import Block, fit_blocks, omission_note
 from app.ai.task_context import TaskFacts, load_open_task_titles, load_task_facts, render_groups
 from app.ai.models import AIInteraction
@@ -250,6 +250,8 @@ async def assemble_coaching_context(
     structured = _assemble_task_section(tasks, behavior, tasks_prompt)
     if tool_decision.offer_tools and tool_decision.require_confirmation:
         structured = f"{structured}\n\n{CONFIRMATION_PROMPT_NOTE}"
+    elif not tool_decision.offer_tools and intent != "out_of_scope":
+        structured = f"{structured}\n\n{TOOLS_UNAVAILABLE_NOTE}"
     if note:
         structured = f"{structured}\n\n{note}"
     extra = memory_prompt_section(memory, tz_name=timezone_name)

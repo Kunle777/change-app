@@ -115,3 +115,16 @@ class ForcedConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoToolsHonestyTests(unittest.TestCase):
+    def test_more_natural_action_phrasings_are_recognised(self):
+        from app.ai.intent_router import is_action_request
+
+        for message in ("put it on my list for Friday", "don't let me forget the rent", "note that down"):
+            self.assertTrue(is_action_request(message), message)
+
+    def test_note_forbids_claiming_a_task_change(self):
+        from app.ai.tool_policy import TOOLS_UNAVAILABLE_NOTE
+
+        self.assertIn("Do NOT say or imply", TOOLS_UNAVAILABLE_NOTE)
