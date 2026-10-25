@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
@@ -11,45 +12,16 @@ from app.ai import gemini
 from app.ai.prompt_builder import build_prompt, build_system_prompt_for_user
 from app.ai.freshness_service import resolve_user_timezone
 from app.ai.context_builder import build_context
+from app.ai.context_service import assemble_coaching_context
 from app.ai.schemas import ChatResponse, ConversationDetail, ConversationSummary, ConversationTurn
 from app.ai.intent_router import detect_intent
 from app.ai.models import AIInteraction, Conversation
 from app.ai import action_service
-from app.memory.retrieval import (memory_allows_tools, memory_prompt_section,
-                                  retrieve_memories, to_sources)
+from app.memory.sources import CONVERSATION_SOURCE, is_indexable_user_message
+from app.memory.tasks import enqueue_memory_source_index
 from app.users.models import User
 
-DAILY_LIMIT_FREE = 20  # arbitrary for now — real tiering logic is Phase 8
-
-
-async def check_usage(db: AsyncSession, user_id: UUID) -> None:
-    today = date.today()
-    result = await db.execute(
-        select(AIUsageLog).where(
-            AIUsageLog.user_id == user_id,
-            AIUsageLog.usage_date == today,
-        )
-    )
-    log = result.scalar_one_or_none()
-    if log is not None and log.request_count >= DAILY_LIMIT_FREE:
-        raise ValueError("Daily AI usage limit reached")
-
-
-async def increment_usage(db: AsyncSession, user_id: UUID) -> None:
-    today = date.today()
-    result = await db.execute(
-        select(AIUsageLog).where(
-            AIUsageLog.user_id == user_id,
-            AIUsageLog.usage_date == today,
-        )
-    )
-    log = result.scalar_one_or_none()
-    if log is None:
-        db.add(AIUsageLog(user_id=user_id, usage_date=today, request_count=1))
-    else:
-        log.request_count += 1
-    await db.commit()
-
+logger = logging.getLogger(__name__)
 
 async def generate_evening_summary(db: AsyncSession, user_id: UUID) -> str:
     # Fetch recent check-ins for the user
@@ -332,7 +304,7 @@ async def _handle_chat_without_tools(
     except Exception:
         response = ChatResponse(
             intent="general_coaching",
-            message="I had trouble understanding that �? could you rephrase?",
+            message="I had trouble understanding that — could you rephrase?",
             suggested_actions=[],
             conversation_id=conversation.id,
         )
@@ -375,95 +347,101 @@ async def handle_chat(
         if conversation is None:
             raise LookupError("Conversation not found")
 
-    intent = detect_intent(message)
-    context = await build_context(db, user_id, intent)
-    history_result = await db.execute(
-        select(AIInteraction)
-        .where(
-            AIInteraction.user_id == user_id,
-            AIInteraction.conversation_id == conversation.id,
-        )
-        .order_by(AIInteraction.created_at.desc())
-        .limit(7)
+    coaching = await assemble_coaching_context(
+        db,
+        user_id=user_id,
+        message=message,
+        conversation_id=conversation.id,
+        timezone_name=timezone_name,
     )
-    previous_turns = list(history_result.scalars().all())
-    previous_turns.reverse()
-    history = [
-        {"question": turn.question, "response": turn.response}
-        for turn in previous_turns
-    ]
-
-    tz = user.last_active_timezone
-    previous_q = previous_turns[-1].question if previous_turns else None
-    memory = await retrieve_memories(
-        db, user_id=user_id, question=message, intent=intent,
-        previous_question=previous_q, tz_name=tz,
-    )
-    logger.info("chat memory: intent=%s state=%s mode=%s", intent, memory.state, memory.mode)
-
-    system_prompt, freshness = await build_system_prompt_for_user(
-        db, user_id, intent, context, timezone_name=timezone_name,
-        extra_context=memory_prompt_section(memory, tz_name=timezone_name),
-    )
-    generated = gemini.generate_chat_response_with_tools(
-        system_prompt, history, message, allow_tools=memory_allows_tools(memory)
-    )
-
+    intent = coaching.intent
+    status = "success"
     pending_action_id = None
     pending_action_summary = None
-    tool_call = generated.get("tool_call")
-    if tool_call is None:
-        final_message = generated.get("text") or "I couldn't finish that response."
-    else:
-        tool_name = tool_call.get("name")
-        arguments = tool_call.get("args") or {}
-        outcome = await action_service.handle_tool_call(
-            db,
-            user=user,
-            conversation_id=conversation.id,
-            tool_name=tool_name,
-            arguments=arguments,
+    tool_used = False
+    tool_name_used = None
+    try:
+        generated = await asyncio.to_thread(
+            gemini.generate_chat_response_with_tools,
+            coaching.system_prompt,
+            coaching.history,
+            message,
+            allow_tools=coaching.allow_tools,
         )
-        if outcome.get("status") == "awaiting_confirmation":
-            pending_action_id = UUID(outcome["pending_action_id"])
-            pending_action_summary = outcome["summary"]
-            try:
-                gemini.send_tool_result(generated["chat"], tool_name, outcome)
-            except Exception:
-                pass
-            final_message = (
-                f"I haven't changed anything yet. {pending_action_summary} "
-                "Please confirm or reject it below."
-            )
+        tool_call = generated.get("tool_call")
+        if tool_call is None:
+            final_message = generated.get("text") or "I couldn't finish that response."
         else:
-            try:
-                final_message = gemini.send_tool_result(
-                    generated["chat"], tool_name, outcome
+            tool_name = tool_call.get("name")
+            tool_used = True
+            tool_name_used = tool_name
+            arguments = tool_call.get("args") or {}
+            outcome = await action_service.handle_tool_call(
+                db,
+                user=user,
+                conversation_id=conversation.id,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+            if outcome.get("status") == "awaiting_confirmation":
+                pending_action_id = UUID(outcome["pending_action_id"])
+                pending_action_summary = outcome["summary"]
+                try:
+                    await asyncio.to_thread(
+                        gemini.send_tool_result, generated["chat"], tool_name, outcome
+                    )
+                except Exception:
+                    pass
+                final_message = (
+                    f"I haven't changed anything yet. {pending_action_summary} "
+                    "Please confirm or reject it below."
                 )
-            except Exception:
-                if outcome.get("status") == "created":
-                    final_message = f"Created task: {outcome.get('title', 'your task')}."
-                elif outcome.get("status") == "error":
-                    final_message = f"I couldn't make that change: {outcome.get('reason', 'the request was invalid')}."
-                else:
-                    final_message = "The task action completed."
+            else:
+                try:
+                    final_message = await asyncio.to_thread(
+                        gemini.send_tool_result,
+                        generated["chat"],
+                        tool_name,
+                        outcome,
+                    )
+                except Exception:
+                    if outcome.get("status") == "created":
+                        final_message = f"Created task: {outcome.get('title', 'your task')}."
+                    elif outcome.get("status") == "error":
+                        final_message = (
+                            "I couldn't make that change: "
+                            f"{outcome.get('reason', 'the request was invalid')}."
+                        )
+                    else:
+                        final_message = "The task action completed."
+    except Exception:
+        logger.exception("Gemini chat generation failed")
+        status = "error"
+        final_message = "I'm having trouble responding right now. Please try again in a moment."
 
     conversation.updated_at = datetime.now(timezone.utc)
-    db.add(
-        AIInteraction(
-            user_id=user_id,
-            conversation_id=conversation.id,
-            pending_action_id=pending_action_id,
-            intent=intent,
-            question=message,
-            response=final_message,
-            context_used=context,
-            context_size=len(context),
-            context_richness=freshness.tier.value,
-            status="success",
-        )
+    interaction = AIInteraction(
+        user_id=user_id,
+        conversation_id=conversation.id,
+        pending_action_id=pending_action_id,
+        intent=intent,
+        question=message,
+        response=final_message,
+        context_used=coaching.context_used,
+        context_size=len(coaching.context_used),
+        context_richness=coaching.freshness.tier.value,
+        tool_used=tool_used,
+        tool_name=tool_name_used,
+        status=status,
     )
+    db.add(interaction)
     await db.commit()
+    if status == "success" and is_indexable_user_message(message):
+        enqueue_memory_source_index(
+            source_type=CONVERSATION_SOURCE,
+            source_id=interaction.id,
+            user_id=user_id,
+        )
     return ChatResponse(
         intent=intent,
         message=final_message,
@@ -471,5 +449,5 @@ async def handle_chat(
         conversation_id=conversation.id,
         pending_action_id=pending_action_id,
         pending_action_summary=pending_action_summary,
-        memory_sources=to_sources(memory.memories, tz) if memory.state == "found" else [],
+        memory_sources=coaching.memory_sources,
     )

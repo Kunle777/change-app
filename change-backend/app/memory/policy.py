@@ -9,6 +9,20 @@ class MemoryAccess:
     reason: str  # ok | no_user | ai_disabled | memory_off
 
 
+async def ai_processing_allowed(db, user_id) -> MemoryAccess:
+    """Whether the account may call the AI coach. Missing entitlements default to allowed."""
+    row = (await db.execute(text(
+        "SELECT f.ai_enabled FROM users u "
+        "LEFT JOIN feature_entitlements f ON f.user_id = u.id "
+        "WHERE u.id = :u"
+    ), {"u": user_id})).first()
+    if row is None:
+        return MemoryAccess(False, "no_user")
+    if row[0] is False:
+        return MemoryAccess(False, "ai_disabled")
+    return MemoryAccess(True, "ok")
+
+
 async def memory_access(db, user_id) -> MemoryAccess:
     """The single permission decision for indexing, search, and browse."""
     row = (await db.execute(text(

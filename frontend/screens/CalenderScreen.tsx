@@ -2,15 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Modal } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import TaskRow from '../components/tasks/TaskRow';
-import TaskActionsSheet from '../components/tasks/TaskActionSheet';
-import RescheduleSheet from '../components/tasks/RescheduleSheet';
+import TaskActionsHost from '../components/tasks/TaskActionsHost';
 import {
   getCalendarDates,
   getTasksByDate,
   completeTask,
-  notNowTask,
-  cancelTask,
-  rescheduleTask,
 } from '../services/tasks';
 import { Task } from '../types/task';
 
@@ -42,7 +38,6 @@ export default function CalendarScreen({ navigation }: any) {
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
-  const [rescheduleVisible, setRescheduleVisible] = useState(false);
 
   const loadMonthDots = useCallback(async () => {
     try {
@@ -220,25 +215,12 @@ export default function CalendarScreen({ navigation }: any) {
         }
       />
 
-      <TaskActionsSheet
+      <TaskActionsHost
+        task={activeTask}
         visible={sheetVisible}
         onClose={() => setSheetVisible(false)}
-        onMarkDone={() => activeTask && completeTask(activeTask.id).then(refresh)}
-        onNotNow={() => activeTask && notNowTask(activeTask.id, 'later_today').then(refresh)}
-        onReschedule={() => setRescheduleVisible(true)}
-        onEdit={() => activeTask && navigation.navigate('CreateTask', { taskId: activeTask.id })}
-        onCancel={() => activeTask && cancelTask(activeTask.id).then(refresh)}
-      />
-      <RescheduleSheet
-        visible={rescheduleVisible}
-        task={activeTask}
-        onClose={() => setRescheduleVisible(false)}
-        onSave={async (dueDate, reminderTime) => {
-          if (activeTask) {
-            await rescheduleTask(activeTask.id, dueDate, reminderTime);
-            await refresh();
-          }
-        }}
+        onChanged={refresh}
+        navigation={navigation}
       />
     </View>
   );

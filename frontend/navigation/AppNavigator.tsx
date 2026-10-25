@@ -144,7 +144,7 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Calendar"
         component={CalendarScreen}
-        options={{ headerShown: true, title: 'Calendar' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="PasscodeSetup"

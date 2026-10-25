@@ -1,25 +1,20 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.tasks.models import StatusEnum
-from app.tasks.service import get_tasks_for_user
+
+from app.ai.behavior import load_behavior_observations
+from app.ai.intent_router import plan_sources
+from app.ai.task_context import load_task_facts
+
 
 async def build_context(db: AsyncSession, user_id, intent: str) -> str:
-    if intent in ("task_planning", "task_help", "daily_review"):
-        tasks = await get_tasks_for_user(db, user_id)
-        tasks = [
-            task
-            for task in tasks
-            if task.status in (StatusEnum.pending, StatusEnum.in_progress)
-        ][:40]
-        if not tasks:
-            return "The user has no open tasks."
-        lines = [
-            f"- id: {t.id}; title: {t.title}; priority: {t.priority.name}; "
-            f"status: {t.status.name}; due_date: {t.due_date.isoformat() if t.due_date else 'not set'}"
-            for t in tasks
-        ]
-        return "Open tasks:\n" + "\n".join(lines)
-
-    if intent == "pattern_reflection":
-        return "No detailed behavioral history is available yet to identify patterns."
-
-    return "No specific ELVYN data is needed for this message."
+    plan = plan_sources("", intent)
+    if not plan.need_tasks and not plan.need_events and not plan.need_behavior:
+        return "No specific ELVYN data is needed for this message."
+    facts = await load_task_facts(
+        db,
+        user_id,
+        need_tasks=plan.need_tasks,
+        need_events=plan.need_events,
+    )
+    behavior = await load_behavior_observations(db, user_id, needed=plan.need_behavior)
+    parts = [part for part in (facts.prompt, behavior.prompt) if part]
+    return "\n\n".join(parts) if parts else "No specific ELVYN data is needed for this message."

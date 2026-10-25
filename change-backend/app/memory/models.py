@@ -26,7 +26,7 @@ class MemoryChunk(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    source_type: Mapped[str] = mapped_column(String(30), nullable=False)   # 'brain_dump' | 'check_in'
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)   # brain_dump | check_in | conversation_user
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     content: Mapped[str] = mapped_column(Text, nullable=False)
