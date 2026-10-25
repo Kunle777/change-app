@@ -16,14 +16,17 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 function DeepLinkHandler() {
   const navigation = useNavigation<any>();
-  const { showResetPassword, setShowResetPassword } = useAuthDeepLink();
+  const { link, clear } = useAuthDeepLink();
 
   useEffect(() => {
-    if (showResetPassword) {
-      navigation.navigate('ResetPassword');
-      setShowResetPassword(false);
-    }
-  }, [showResetPassword]);
+    if (!link) return;
+    // Wait a tick so the navigator has mounted if the app was just unlocked.
+    const timer = setTimeout(() => {
+      navigation.navigate('ResetPassword', { error: link.error });
+      clear();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [link]);
 
   return null;
 }

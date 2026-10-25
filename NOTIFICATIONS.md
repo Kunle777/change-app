@@ -86,22 +86,15 @@ python -m celery -A celery_app:celery_app worker --pool=solo --loglevel=info
 python -m celery -A celery_app:celery_app beat --loglevel=info
 ```
 
+Beat schedule (see `celery_app.py`): `check_reminders` every minute, `deliver_task_event_outbox_job` every minute, `record_overdue_task_events_job` every minute, `spawn_recurring_task_job` hourly, and `sweep_memory_index_job` every 15 minutes (re-indexes AI memory sources that missed their on-write job). Beat writes a local `celerybeat-schedule` file; it is git-ignored and must not be committed.
+
 Run those commands from `change-backend` with its virtual environment active. The root-level module is `celery_app`, not `app.celery_app`.
 
 ## Do they clash?
 
-They do not overwrite each other's notification IDs or schedules. Local scheduling is owned by Android/iOS, while FCM delivery is owned by Firebase and the operating system.
+No. Local scheduling is owned by Android/iOS and FCM delivery by Firebase.
 
-However, the current task flow can produce duplicates:
-
-1. `HomeScreen` schedules a local reminder immediately.
-2. The task is stored with `reminder_time` in the database.
-3. Celery Beat later finds that same reminder.
-4. FCM sends another message if the user has an FCM token.
-
-That means one task can create two notifications. They may arrive close together, but the local notification is normally more exact while the FCM one waits for the next backend check and network delivery.
-
-This is duplicate delivery, not a database conflict.
+Duplicates are prevented: when the app schedules a local reminder it reports a `reminder_scheduled` event. Before sending FCM, `check_reminders` looks for a matching event (same task and reminder time) in `task_events` or the outbox. If one exists, the device owns the alert, the task is marked `is_reminder_sent`, and FCM is skipped. FCM is only a fallback for tasks with no confirmed local schedule (see `Taskflow.md`). A failed FCM send leaves the reminder eligible for retry.
 
 ## Will the UI look the same?
 
@@ -188,14 +181,14 @@ The symptom was:
 RuntimeError: Event loop is closed
 ```
 
-The backend engine now uses SQLAlchemy's `NullPool` in `app/database.py`. Connections are not reused across Celery's separate event loops. The reminder coroutine was also run twice in separate loops successfully after the change.
+Celery jobs now open their database session through `app/celery_database.py` (`celery_db_session`), which builds a fresh `NullPool` engine per task run, so connections are never reused across Celery's separate event loops. The FastAPI engine in `app/database.py` is unchanged. The reminder coroutine was also run twice in separate loops successfully after the change.
 
 ## Operational configuration
 
 Celery expects a direct Redis URL, not a shell command:
 
 ```env
-REDIS_URL=rediss://default:<password>@<upstash-host>:6379
+REDIS_URL=rediss://default:<password>@<upstash-host>:6379   # rediss:// enables TLS options; a local redis:// URL runs without them
 FIREBASE_CREDENTIALS_PATH=firebase-credentials.json
 ```
 

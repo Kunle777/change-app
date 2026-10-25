@@ -1,28 +1,28 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from celery_app import celery_app
 from app.celery_database import celery_db_session
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.tasks.models import Task, RecurrenceEnum, TaskEvent, TaskEventOutbox
-from app.tasks.schemas import TaskCreate
+from app.tasks.models import Task, StatusEnum, TaskEvent, TaskEventOutbox, TaskEventType
 from app.tasks.service import (
     get_completed_recurring_tasks,
-    create_task,
     get_due_reminders,
     record_overdue_task_events as record_overdue_events,
 )
 from app.tasks.task_event_service import deliver_task_event_outbox
 from app.tasks.recurrence_service import generate_recurring_task_occurrences
-from app.tasks.models import TaskEventType
 from app.tasks.task_event_service import log_task_event
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from fcm import send_push_notification
+
+logger = logging.getLogger(__name__)
 
 
 def _send_remote_reminder(task: Task) -> bool:
     if not task.user or not task.user.fcm_token:
-        print(f"No FCM token for task {task.id}, user={task.user_id}")
+        logger.info("No FCM token for task %s, user=%s", task.id, task.user_id)
         return False
     try:
         sent = send_push_notification(
@@ -31,7 +31,7 @@ def _send_remote_reminder(task: Task) -> bool:
             body=task.title,
         )
     except Exception as error:
-        print(f"FCM send failed for task {task.id}: {error}")
+        logger.warning("FCM send failed for task %s: %s", task.id, error)
         return False
     if sent:
         task.is_reminder_sent = True
@@ -77,7 +77,7 @@ async def _check_reminders_async():
         await db.commit()
 
 
-@celery_app.task
+@celery_app.task(name="app.tasks_celery.check_reminders")
 def check_reminders():
     asyncio.run(_check_reminders_async())
 
@@ -87,7 +87,7 @@ async def _record_overdue_task_events_async():
         await record_overdue_events(db)
 
 
-@celery_app.task
+@celery_app.task(name="app.tasks_celery.record_overdue_task_events_job")
 def record_overdue_task_events_job():
     asyncio.run(_record_overdue_task_events_async())
 
@@ -97,7 +97,7 @@ async def _deliver_task_event_outbox_async():
         await deliver_task_event_outbox(db)
 
 
-@celery_app.task
+@celery_app.task(name="app.tasks_celery.deliver_task_event_outbox_job")
 def deliver_task_event_outbox_job():
     asyncio.run(_deliver_task_event_outbox_async())
 
@@ -121,7 +121,6 @@ async def _spawn_recurring_async(db: AsyncSession):
         else:
             next_due = base + relativedelta(months=1)
             next_reminder = task.reminder_time + relativedelta(months=1) if task.reminder_time else None
-        from app.tasks.models import Task, StatusEnum
         next_task = Task(
             user_id=task.user_id,
             title=task.title,
@@ -144,12 +143,7 @@ async def _spawn_recurring_tasks_async():
         await _spawn_recurring_async(db)
 
 
-@celery_app.task
+@celery_app.task(name="app.tasks_celery.spawn_recurring_task_job")
 def spawn_recurring_task_job():
     asyncio.run(_spawn_recurring_tasks_async())
 
-
-@celery_app.task
-def say_hello(name: str):
-    print(f"Sending hello to {name}")
-    return f"Hello, {name}!"

@@ -72,8 +72,8 @@ Migration `c814d62a9f31` follows the task-event merge and adds `task_series`, oc
 The backend requirements include Celery with its Redis transport extra, which the existing Celery app/Beat configuration requires. Set `REDIS_URL`, then run a Celery worker and Beat scheduler from `change-backend` in separate processes:
 
 ```bash
-celery -A celery_app.celery_app worker --pool=solo
-celery -A celery_app.celery_app beat
+celery -A celery_app:celery_app worker --pool=solo
+celery -A celery_app:celery_app beat
 ```
 
 `--pool=solo` is suitable for the local Windows development environment; use the deployment's supported worker pool in production.
