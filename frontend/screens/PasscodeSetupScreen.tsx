@@ -1,52 +1,117 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { setPasscode } from '../services/passcode';
+import { useState } from 'react';
+import { Text, TextInput, View } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { clearPasscode, setPasscode, verifyPasscode } from '../services/passcode';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import { useColors } from '../theme/colors';
+import AuthScreen from '../components/auth/AuthScreen';
+import { PrimaryButton } from '../components/auth/Buttons';
 
-export default function PasscodeSetupScreen({ navigation }: any) {
-  const [code, setCode] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [stage, setStage] = useState<'enter' | 'confirm'>('enter');
+type Props = NativeStackScreenProps<RootStackParamList, 'PasscodeSetup'>;
+type Stage = 'current' | 'enter' | 'confirm';
 
-  const handleContinue = () => {
-    if (stage === 'enter') {
-      if (code.length < 4 || code.length > 6) {
-        Alert.alert('Passcode must be 4-6 digits');
+const TITLES: Record<Stage, string> = {
+  current: 'Enter your current passcode',
+  enter: 'Choose a passcode',
+  confirm: 'Confirm your passcode',
+};
+const HINTS: Record<Stage, string> = {
+  current: 'We need to check it is you.',
+  enter: 'Use 4 to 6 digits.',
+  confirm: 'Enter it once more.',
+};
+
+export default function PasscodeSetupScreen({ navigation, route }: Props) {
+  const colors = useColors();
+  const mode = route.params?.mode ?? 'create';
+  const [stage, setStage] = useState<Stage>(mode === 'create' ? 'enter' : 'current');
+  const [first, setFirst] = useState('');
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleContinue() {
+    setError(null);
+    if (value.length < 4) {
+      setError('Use at least 4 digits.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (stage === 'current') {
+        if (!(await verifyPasscode(value))) {
+          setError('That passcode is not correct.');
+          setValue('');
+          return;
+        }
+        if (mode === 'disable') {
+          await clearPasscode();
+          navigation.goBack();
+          return;
+        }
+        setStage('enter');
+        setValue('');
         return;
       }
-      setStage('confirm');
-      return;
+      if (stage === 'enter') {
+        setFirst(value);
+        setStage('confirm');
+        setValue('');
+        return;
+      }
+      if (value !== first) {
+        setError("Those don't match. Try again.");
+        setStage('enter');
+        setFirst('');
+        setValue('');
+        return;
+      }
+      await setPasscode(value);
+      navigation.goBack();
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setBusy(false);
     }
-    if (confirm !== code) {
-      Alert.alert('Passcodes do not match');
-      setConfirm('');
-      return;
-    }
-    setPasscode(code).then(() => navigation.replace('Home'));
-  };
+  }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{stage === 'enter' ? 'Set your passcode' : 'Confirm your passcode'}</Text>
-      <TextInput
-        style={styles.input}
-        keyboardType="number-pad"
-        secureTextEntry
-        maxLength={6}
-        value={stage === 'enter' ? code : confirm}
-        onChangeText={stage === 'enter' ? setCode : setConfirm}
-        autoFocus
-      />
-      <TouchableOpacity style={styles.button} onPress={handleContinue}>
-        <Text style={styles.buttonText}>Continue</Text>
-      </TouchableOpacity>
-    </View>
+    <AuthScreen onBack={() => navigation.goBack()}>
+      <Text style={{ color: colors.text, fontSize: 26, fontWeight: '800', marginTop: 24 }}>{TITLES[stage]}</Text>
+      <Text style={{ color: colors.textMuted, marginTop: 6, marginBottom: 28 }}>{HINTS[stage]}</Text>
+
+      <View
+        style={{
+          backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1,
+          borderColor: error ? colors.danger : colors.border, marginBottom: 8,
+        }}
+      >
+        <TextInput
+          key={stage}
+          value={value}
+          onChangeText={(v) => { setValue(v.replace(/\D/g, '')); setError(null); }}
+          keyboardType="number-pad"
+          secureTextEntry
+          maxLength={6}
+          autoFocus
+          accessibilityLabel={TITLES[stage]}
+          onSubmitEditing={handleContinue}
+          style={{ color: colors.text, fontSize: 28, letterSpacing: 12, textAlign: 'center', paddingVertical: 16 }}
+        />
+      </View>
+      {error ? (
+        <Text accessibilityRole="alert" style={{ color: colors.danger, textAlign: 'center', marginBottom: 8 }}>
+          {error}
+        </Text>
+      ) : null}
+
+      <View style={{ marginTop: 16 }}>
+        <PrimaryButton
+          label={mode === 'disable' && stage === 'current' ? 'Turn off passcode' : 'Continue'}
+          onPress={handleContinue}
+          loading={busy}
+        />
+      </View>
+    </AuthScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  title: { fontSize: 18, fontWeight: '600', marginBottom: 24 },
-  input: { fontSize: 32, letterSpacing: 12, textAlign: 'center', borderBottomWidth: 2, width: 200, marginBottom: 32 },
-  button: { backgroundColor: '#333', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 8 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-});
