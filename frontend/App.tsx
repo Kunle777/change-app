@@ -3,8 +3,6 @@ import { DarkTheme, DefaultTheme, NavigationContainer, useNavigation } from "@re
 import { useAuthDeepLink } from "./hooks/useAuthDeepLink";
 import { AppState, AppStateStatus } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
-import { hasPasscode } from './services/passcode';
-import PasscodeLockScreen from './screens/PasscodeLockScreen';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useColors } from './theme/colors';
 import { supabase } from './services/supabase';
@@ -32,7 +30,6 @@ function DeepLinkHandler() {
 }
 
 function AppContent() {
-  const [locked, setLocked] = useState(true);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const { resolvedTheme } = useTheme();
   const colors = useColors();
@@ -65,8 +62,6 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    hasPasscode().then((exists) => setLocked(exists));
-
     const reconcileIfAuthenticated = async () => {
       const { data, error } = await supabase.auth.getSession();
       if (!error && data.session) {
@@ -89,9 +84,6 @@ function AppContent() {
 
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {
-        hasPasscode().then((exists) => {
-          if (exists) setLocked(true);
-        });
         void reconcileIfAuthenticated();
       }
       appState.current = nextState;
@@ -102,10 +94,6 @@ function AppContent() {
       authListener.subscription.unsubscribe();
     };
   }, []);
-
-  if (locked) {
-    return <PasscodeLockScreen onUnlock={() => setLocked(false)} />;
-  }
 
   const navigationTheme = resolvedTheme === 'dark' ? DarkTheme : DefaultTheme;
   const themedNavigation = {

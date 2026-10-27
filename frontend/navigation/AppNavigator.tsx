@@ -24,7 +24,6 @@ import CalendarScreen from '../screens/CalenderScreen';
 import CreateTaskScreen from '../screens/CreateTaskScreen';
 import WinLogScreen from '../screens/WinLogScreen';
 import { Ionicons } from '@expo/vector-icons';
-import PasscodeSetupScreen from '../screens/PasscodeSetupScreen';
 import CountryConfirmScreen from '../screens/CountryConfirmScreen';
 import { useColors } from '../theme/colors';
 
@@ -48,7 +47,6 @@ export type RootStackParamList = {
   CheckIn: { type: 'morning' | 'evening' };
   Calendar: undefined;
   WinLog: undefined;
-  PasscodeSetup: { mode?: 'create' | 'change' | 'disable' } | undefined;
 };
 
 export type MainTabParamList = {
@@ -154,10 +152,6 @@ export default function AppNavigator() {
         name="Calendar"
         component={CalendarScreen}
         options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="PasscodeSetup"
-        component={PasscodeSetupScreen}
       />
     </Stack.Navigator>
   );

@@ -81,7 +81,7 @@ export default function MoreScreen({ navigation }: any) {
           <SettingsRow icon="notifications-outline" title="Notifications" subtitle="Reminders and system alerts" onPress={() => navigation.navigate('NotificationSettings')} />
           <SettingsRow icon="contrast-outline" title="Appearance" subtitle="Light, dark or system" onPress={() => navigation.navigate('Appearance')} />
           <SettingsRow icon="checkbox-outline" title="Check-ins" subtitle="Morning and evening prompts" onPress={() => navigation.navigate('CheckInSettings')} />
-          <SettingsRow icon="shield-checkmark-outline" title="Security & Privacy" subtitle="App passcode and your data" onPress={() => navigation.navigate('SecurityPrivacy')} last />
+          <SettingsRow icon="shield-checkmark-outline" title="Security & Privacy" subtitle="Password and your data" onPress={() => navigation.navigate('SecurityPrivacy')} last />
         </SettingsGroup>
 
         <SettingsGroup label="Elvyn">
