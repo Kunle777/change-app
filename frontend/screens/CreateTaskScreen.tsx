@@ -17,6 +17,7 @@ import {
   syncTaskToCalendar,
 } from '../services/calendarSync';
 import { TaskPriority, TaskRecurrence } from '../types/task';
+import { getDefaultPriorityReminder } from '../services/preferences';
 import VoiceCaptureButton from '../components/VoiceCaptureButton';
 
 const PRIORITIES: TaskPriority[] = ['low', 'medium', 'high'];
@@ -98,6 +99,7 @@ export default function CreateTaskScreen({ route, navigation }: any) {
 
   useEffect(() => {
     if (isEdit) loadExistingTask();
+    else getDefaultPriorityReminder().then(setPriorityReminder);
   }, [taskId]);
 
   async function loadExistingTask() {

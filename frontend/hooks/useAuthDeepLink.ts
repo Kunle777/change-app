@@ -5,9 +5,9 @@ import { supabase } from '../services/supabase';
 /**
  * Password-recovery deep links (elvyn://reset-password#access_token=...&type=recovery).
  *
- * Listening starts once at module level, not inside a screen: while the app is
- * passcode-locked the navigator is unmounted, and a link that arrives then used
- * to be lost. The result waits in `pending` until the navigator is ready.
+ * Listening starts once at module level, not inside a screen, so a link that
+ * arrives before the navigator has mounted is not lost. The result waits in
+ * `pending` until the navigator is ready.
  */
 export type RecoveryLink = { error?: string };
 

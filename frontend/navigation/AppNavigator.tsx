@@ -8,7 +8,12 @@ import HomeScreen from '../screens/HomeScreen';
 import CheckInScreen from '../screens/CheckInScreen';
 import AIScreen from '../screens/AIScreen';
 import BrainDumpScreen from '../screens/BrainDumpScreen';
-import SettingsScreen from '../screens/SettingsScreen';
+import ProfileScreen from '../screens/ProfileScreen';
+import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
+import CheckInSettingsScreen from '../screens/CheckInSettingsScreen';
+import SecurityPrivacyScreen from '../screens/SecurityPrivacyScreen';
+import HelpSupportScreen from '../screens/HelpSupportScreen';
+import AboutScreen from '../screens/AboutScreen';
 import MoreScreen from '../screens/MoreScreen';
 import AppearanceScreen from '../screens/AppearanceScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
@@ -19,7 +24,6 @@ import CalendarScreen from '../screens/CalenderScreen';
 import CreateTaskScreen from '../screens/CreateTaskScreen';
 import WinLogScreen from '../screens/WinLogScreen';
 import { Ionicons } from '@expo/vector-icons';
-import PasscodeSetupScreen from '../screens/PasscodeSetupScreen';
 import CountryConfirmScreen from '../screens/CountryConfirmScreen';
 import { useColors } from '../theme/colors';
 
@@ -33,12 +37,16 @@ export type RootStackParamList = {
   TaskDetail: { taskId: string };
   CreateTask: { taskId?: string; prefilledDate?: string } | undefined;
   MainTabs: undefined;
-  Settings: undefined;
+  Profile: undefined;
+  NotificationSettings: undefined;
+  CheckInSettings: undefined;
+  SecurityPrivacy: undefined;
+  HelpSupport: undefined;
+  About: undefined;
   Appearance: undefined;
   CheckIn: { type: 'morning' | 'evening' };
   Calendar: undefined;
   WinLog: undefined;
-  PasscodeSetup: undefined;
 };
 
 export type MainTabParamList = {
@@ -118,7 +126,12 @@ export default function AppNavigator() {
       />
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="WinLog" component={WinLogScreen} options={{ headerShown: true, title: "Win Log" }} />
-      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
+      <Stack.Screen name="CheckInSettings" component={CheckInSettingsScreen} />
+      <Stack.Screen name="SecurityPrivacy" component={SecurityPrivacyScreen} />
+      <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+      <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Appearance" component={AppearanceScreen} />
       <Stack.Screen
         name="TaskDetail"
@@ -139,11 +152,6 @@ export default function AppNavigator() {
         name="Calendar"
         component={CalendarScreen}
         options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="PasscodeSetup"
-        component={PasscodeSetupScreen}
-        options={{ headerShown: true, title: 'Passcode' }}
       />
     </Stack.Navigator>
   );
