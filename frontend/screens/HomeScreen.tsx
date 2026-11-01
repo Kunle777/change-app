@@ -58,7 +58,6 @@ export default function HomeScreen({ navigation }: any) {
   const [checkingIn, setCheckingIn] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [sheetVisible, setSheetVisible] = useState(false);
 
   const timeOfDay = getTimeOfDay();
   const heroPrompt = timeOfDay === 'morning' ? getMorningPrompt() : getEveningPrompt();
@@ -83,7 +82,9 @@ export default function HomeScreen({ navigation }: any) {
 
   useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
 
-  const reload = useCallback(() => { void loadAll(); }, [loadAll]);
+  const reload = useCallback(() => {
+    void loadAll();
+  }, [loadAll]);
   const completeOptimistically = useTaskCompletion([setTasks, setUndatedTasks], reload);
 
   async function handleRefresh() {
@@ -123,7 +124,7 @@ export default function HomeScreen({ navigation }: any) {
   const handlers = (item: Task) => ({
     onPress: () => navigation.navigate('TaskDetail', { taskId: item.id }),
     onToggleComplete: () => completeOptimistically(item),
-    onMore: () => { setActiveTask(item); setSheetVisible(true); },
+    onMore: () => setActiveTask(item),
   });
 
   const title = { color: colors.text, fontWeight: '700', fontSize: 17 } as const;
@@ -316,8 +317,7 @@ export default function HomeScreen({ navigation }: any) {
 
       <TaskActionsHost
         task={activeTask}
-        visible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
+        onClose={() => setActiveTask(null)}
         onChanged={reload}
         onMarkDone={completeOptimistically}
         navigation={navigation}

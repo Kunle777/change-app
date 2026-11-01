@@ -32,7 +32,6 @@ export default function CalendarScreen({ navigation }: any) {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [sheetVisible, setSheetVisible] = useState(false);
 
   const loadMonthDots = useCallback(async () => {
     try {
@@ -195,10 +194,7 @@ export default function CalendarScreen({ navigation }: any) {
             task={item}
             onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
             onToggleComplete={() => completeOptimistically(item)}
-            onMore={() => {
-              setActiveTask(item);
-              setSheetVisible(true);
-            }}
+            onMore={() => setActiveTask(item)}
           />
         )}
         ListFooterComponent={
@@ -211,10 +207,7 @@ export default function CalendarScreen({ navigation }: any) {
                   task={item}
                   onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
                   onToggleComplete={() => completeOptimistically(item)}
-                  onMore={() => {
-                    setActiveTask(item);
-                    setSheetVisible(true);
-                  }}
+                  onMore={() => setActiveTask(item)}
                 />
               ))}
             </View>
@@ -224,8 +217,7 @@ export default function CalendarScreen({ navigation }: any) {
 
       <TaskActionsHost
         task={activeTask}
-        visible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
+        onClose={() => setActiveTask(null)}
         onChanged={refresh}
         onMarkDone={completeOptimistically}
         navigation={navigation}

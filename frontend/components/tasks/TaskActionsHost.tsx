@@ -1,77 +1,126 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
-import TaskActionsSheet from './TaskActionSheet';
-import NotNowSheet, { NotNowOption } from './NotNowSheet';
+import TaskActionSheet, { TaskActionKey } from './TaskActionSheet';
 import RescheduleSheet from './RescheduleSheet';
-import { cancelTask, completeTask, notNowTask, rescheduleTask } from '../../services/tasks';
+import { cancelTask, notNowTask, rescheduleTask } from '../../services/tasks';
 import type { Task } from '../../types/task';
 
-type Props = {
+interface Props {
   task: Task | null;
-  visible: boolean;
   onClose: () => void;
   onChanged: () => void;
-  /** Optimistic completion from the parent; falls back to a plain API call. */
-  onMarkDone?: (task: Task) => void;
+  onMarkDone: (task: Task) => void;
   navigation: any;
-};
+}
 
-// Android can't reliably open one Modal while another is still closing.
 const MODAL_GAP_MS = 300;
+const FRIENDLY_ERROR = "That didn't go through. Please try again in a moment.";
 
-export default function TaskActionsHost({ task, visible, onClose, onChanged, onMarkDone, navigation }: Props) {
-  const [notNowVisible, setNotNowVisible] = useState(false);
-  const [rescheduleVisible, setRescheduleVisible] = useState(false);
+export default function TaskActionsHost({ task, onClose, onChanged, onMarkDone, navigation }: Props) {
+  const [current, setCurrent] = useState<Task | null>(null);
+  const [sheet, setSheet] = useState<'actions' | 'reschedule' | null>(null);
 
-  async function run(fn: () => Promise<unknown>) {
+  useEffect(() => {
+    if (task) {
+      setCurrent(task);
+      setSheet('actions');
+    }
+  }, [task]);
+
+  function finish() {
+    setSheet(null);
+    onClose();
+  }
+
+  async function run(action: () => Promise<unknown>) {
     try {
-      await fn();
+      await action();
       onChanged();
-    } catch (e) {
-      console.log('Task action failed:', e);
-      Alert.alert("Couldn't update this task", 'Please try again.');
+    } catch (error) {
+      console.log('Task action failed:', error);
+      Alert.alert('Something went wrong', FRIENDLY_ERROR);
     }
   }
 
-  function confirmCancel() {
-    if (!task) return;
-    Alert.alert(
-      'Cancel this task?',
-      task.series_id ? 'Only this occurrence is cancelled. The repeat continues.' : 'It stays in your history.',
-      [
-        { text: 'Keep it', style: 'cancel' },
-        { text: 'Cancel task', style: 'destructive', onPress: () => void run(() => cancelTask(task.id)) },
-      ],
-    );
+  function handleSelect(key: TaskActionKey) {
+    const selectedTask = current;
+    if (!selectedTask) {
+      finish();
+      return;
+    }
+    setSheet(null);
+
+    if (key === 'done') {
+      onMarkDone(selectedTask);
+      onClose();
+      return;
+    }
+
+    if (key === 'reschedule') {
+      setTimeout(() => setSheet('reschedule'), MODAL_GAP_MS);
+      return;
+    }
+
+    setTimeout(() => {
+      if (key === 'edit') {
+        onClose();
+        navigation.navigate('CreateTask', { taskId: selectedTask.id });
+      } else if (key === 'not_now') {
+        Alert.alert(
+          'Not now',
+          'When would you like to see this again?',
+          [
+            {
+              text: 'Later today',
+              onPress: () => {
+                onClose();
+                void run(() => notNowTask(selectedTask.id, 'later_today'));
+              },
+            },
+            {
+              text: 'Tomorrow morning',
+              onPress: () => {
+                onClose();
+                void run(() => notNowTask(selectedTask.id, 'tomorrow'));
+              },
+            },
+            { text: 'Never mind', style: 'cancel', onPress: onClose },
+          ],
+          { cancelable: true, onDismiss: onClose },
+        );
+      } else if (key === 'cancel') {
+        Alert.alert(
+          'Cancel this task?',
+          selectedTask.series_id
+            ? 'Only this occurrence is cancelled. The repeat continues.'
+            : 'It stays in your history.',
+          [
+            { text: 'Keep it', style: 'cancel', onPress: onClose },
+            {
+              text: 'Cancel task',
+              style: 'destructive',
+              onPress: () => {
+                onClose();
+                void run(() => cancelTask(selectedTask.id));
+              },
+            },
+          ],
+          { cancelable: true, onDismiss: onClose },
+        );
+      }
+    }, MODAL_GAP_MS);
   }
 
   return (
     <>
-      <TaskActionsSheet
-        visible={visible}
-        onClose={onClose}
-        onMarkDone={() => {
-          if (!task) return;
-          if (onMarkDone) onMarkDone(task);
-          else void run(() => completeTask(task.id));
-        }}
-        onNotNow={() => setTimeout(() => setNotNowVisible(true), MODAL_GAP_MS)}
-        onReschedule={() => setTimeout(() => setRescheduleVisible(true), MODAL_GAP_MS)}
-        onEdit={() => task && setTimeout(() => navigation.navigate('CreateTask', { taskId: task.id }), 100)}
-        onCancel={() => setTimeout(confirmCancel, MODAL_GAP_MS)}
-      />
-      <NotNowSheet
-        visible={notNowVisible}
-        onClose={() => setNotNowVisible(false)}
-        onPick={(option: NotNowOption) => task && void run(() => notNowTask(task.id, option))}
-      />
+      <TaskActionSheet visible={sheet === 'actions'} onDismiss={finish} onSelect={handleSelect} />
       <RescheduleSheet
-        visible={rescheduleVisible}
-        task={task}
-        onClose={() => setRescheduleVisible(false)}
+        visible={sheet === 'reschedule'}
+        task={current}
+        onClose={finish}
         onSave={async (dueDate, reminderTime) => {
-          if (!task) return;
-          await rescheduleTask(task.id, dueDate, reminderTime);
+          if (!current) return;
+          await rescheduleTask(current.id, dueDate, reminderTime);
           onChanged();
         }}
       />

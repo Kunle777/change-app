@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, View, Text, TouchableOpacity, Pressable } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import { Task } from '../../types/task';
+import type { Task } from '../../types/task';
 import { useColors } from '../../theme/colors';
 
 interface Props {
@@ -12,13 +12,13 @@ interface Props {
   onSave: (dueDate: Date, reminderTime?: Date) => void | Promise<void>;
 }
 
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const addDays = (d: Date, n: number) => {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
 };
-const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+const sameDay = (first: Date, second: Date) => first.toDateString() === second.toDateString();
 
 export default function RescheduleSheet({ visible, task, onClose, onSave }: Props) {
   const colors = useColors();
@@ -29,22 +29,22 @@ export default function RescheduleSheet({ visible, task, onClose, onSave }: Prop
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset from the task every time the sheet opens (it is mounted before any task is chosen).
   useEffect(() => {
     if (!visible) return;
+    const today = startOfDay(new Date());
     const due = task?.due_date ? new Date(task.due_date) : null;
-    setDate(due && due >= startOfDay(new Date()) ? due : new Date());
+    setDate(due && startOfDay(due) >= today ? due : new Date());
     setTime(task?.reminder_time ? new Date(task.reminder_time) : undefined);
+    setShowDate(false);
+    setShowTime(false);
     setError(null);
     setSaving(false);
   }, [visible, task?.id]);
 
-  // The picked time carries its own date, so combine it with the chosen day.
   const reminder = time
     ? new Date(date.getFullYear(), date.getMonth(), date.getDate(), time.getHours(), time.getMinutes())
     : undefined;
   const inPast = !!reminder && reminder.getTime() <= Date.now();
-
   const today = startOfDay(new Date());
   const chips = [
     { label: 'Today', value: today },
@@ -53,15 +53,15 @@ export default function RescheduleSheet({ visible, task, onClose, onSave }: Prop
   ];
 
   async function handleSave() {
-    if (inPast) return;
+    if (saving || inPast) return;
     setSaving(true);
     setError(null);
     try {
       const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
       await onSave(endOfDay, reminder);
       onClose();
-    } catch (e) {
-      console.log('Reschedule failed:', e);
+    } catch (saveError) {
+      console.log('Reschedule failed:', saveError);
       setError("Couldn't reschedule. Please try again.");
     } finally {
       setSaving(false);
@@ -82,8 +82,15 @@ export default function RescheduleSheet({ visible, task, onClose, onSave }: Prop
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose}>
         <Pressable
-          onPress={(e) => e.stopPropagation()}
-          style={{ marginTop: 'auto', backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 28 }}
+          onPress={(event) => event.stopPropagation()}
+          style={{
+            marginTop: 'auto',
+            backgroundColor: colors.surface,
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+            padding: 20,
+            paddingBottom: 28,
+          }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Ionicons name="calendar-outline" size={24} color={colors.primary} />
@@ -94,12 +101,12 @@ export default function RescheduleSheet({ visible, task, onClose, onSave }: Prop
           </Text>
 
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-            {chips.map((c) => {
-              const selected = sameDay(date, c.value);
+            {chips.map((chip) => {
+              const selected = sameDay(date, chip.value);
               return (
                 <TouchableOpacity
-                  key={c.label}
-                  onPress={() => setDate(c.value)}
+                  key={chip.label}
+                  onPress={() => setDate(chip.value)}
                   style={{
                     flex: 1,
                     paddingVertical: 9,
@@ -110,7 +117,9 @@ export default function RescheduleSheet({ visible, task, onClose, onSave }: Prop
                     backgroundColor: selected ? colors.primarySoft : 'transparent',
                   }}
                 >
-                  <Text style={{ color: selected ? colors.primary : colors.text, fontWeight: '600', fontSize: 13 }}>{c.label}</Text>
+                  <Text style={{ color: selected ? colors.primary : colors.text, fontWeight: '600', fontSize: 13 }}>
+                    {chip.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -168,7 +177,14 @@ export default function RescheduleSheet({ visible, task, onClose, onSave }: Prop
           <TouchableOpacity
             onPress={handleSave}
             disabled={saving || inPast}
-            style={{ backgroundColor: colors.primary, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 4, opacity: saving || inPast ? 0.5 : 1 }}
+            style={{
+              backgroundColor: colors.primary,
+              borderRadius: 14,
+              padding: 16,
+              alignItems: 'center',
+              marginTop: 4,
+              opacity: saving || inPast ? 0.5 : 1,
+            }}
           >
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>}
           </TouchableOpacity>
