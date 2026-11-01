@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -27,8 +27,33 @@ EVENT_TYPES = (
     "completed",
     "overdue",
 )
-MAX_TASK_CONTEXT_CHARS = 3500
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TaskGroup:
+    """One headed list of facts. Items are ordered most-important-first so a
+    budget can drop from the tail without cutting a line in half."""
+
+    name: str
+    priority: float  # lower = kept longest when the context budget is tight
+    header: str
+    items: list[str]
+    min_items: int = 0
+
+
+def render_groups(groups: list["TaskGroup"], counts: dict[str, int] | None = None) -> str:
+    lines: list[str] = []
+    for group in groups:
+        if not group.items:  # header-only statement, e.g. "no recorded events"
+            lines.append(group.header)
+            continue
+        n = len(group.items) if counts is None else counts.get(group.name, len(group.items))
+        if n <= 0:
+            continue
+        lines.append(group.header)
+        lines.extend(group.items[:n])
+    return "\n".join(lines)
 
 
 @dataclass
@@ -39,6 +64,7 @@ class TaskFacts:
     overdue_count: int = 0
     event_count: int = 0
     queried: bool = False
+    groups: list[TaskGroup] = field(default_factory=list)
 
 
 def _zone(name: str | None) -> ZoneInfo:
@@ -91,6 +117,25 @@ async def _tasks_where(db: AsyncSession, statement) -> list[Task]:
     return list(result.scalars().all())
 
 
+async def load_open_task_titles(db: AsyncSession, user_id: UUID, limit: int = 50) -> list[str]:
+    """Titles of the user's own open tasks, used only to detect that a message names one."""
+    try:
+        result = await db.execute(
+            select(Task.title)
+            .where(
+                Task.user_id == user_id,
+                Task.is_deleted.is_(False),
+                Task.status.in_(OPEN_STATUSES),
+            )
+            .order_by(Task.due_date.asc().nulls_last(), Task.created_at.desc())
+            .limit(limit)
+        )
+        return [title for title in result.scalars().all() if title]
+    except Exception:
+        logger.warning("Could not load open task titles", exc_info=True)
+        return []
+
+
 async def load_task_facts(
     db: AsyncSession,
     user_id: UUID,
@@ -106,7 +151,7 @@ async def load_task_facts(
     now = now or datetime.now(timezone.utc)
     zone = _zone(timezone_name)
     today_start = _start_of_local_day(zone, now)
-    lines: list[str] = []
+    groups: list[TaskGroup] = []
     open_count = overdue_count = event_count = 0
 
     try:
@@ -163,11 +208,15 @@ async def load_task_facts(
             open_count = len(open_tasks)
             overdue_count = len(overdue)
             if overdue:
-                lines.append("Overdue open tasks:")
-                lines.extend(_task_line(task, zone, "overdue: yes") for task in overdue)
+                groups.append(TaskGroup(
+                    "overdue", 0.0, "Overdue open tasks:",
+                    [_task_line(task, zone, "overdue: yes") for task in overdue], min_items=3,
+                ))
             if upcoming:
-                lines.append("Upcoming open tasks (next 7 local days):")
-                lines.extend(_task_line(task, zone) for task in upcoming)
+                groups.append(TaskGroup(
+                    "upcoming", 0.1, "Upcoming open tasks (next 7 local days):",
+                    [_task_line(task, zone) for task in upcoming], min_items=3,
+                ))
             remaining_open = [
                 task
                 for task in open_tasks
@@ -175,26 +224,34 @@ async def load_task_facts(
             ]
             if remaining_open or (open_tasks and not overdue and not upcoming and not undated):
                 shown = remaining_open or open_tasks
-                lines.append("Other open tasks:")
-                lines.extend(_task_line(task, zone) for task in shown)
+                groups.append(TaskGroup(
+                    "other_open", 0.2, "Other open tasks:",
+                    [_task_line(task, zone) for task in shown], min_items=2,
+                ))
             if undated:
-                lines.append("Open tasks with no due date:")
-                lines.extend(_task_line(task, zone) for task in undated)
+                groups.append(TaskGroup(
+                    "undated", 0.3, "Open tasks with no due date:",
+                    [_task_line(task, zone) for task in undated], min_items=2,
+                ))
             if completed:
-                lines.append(f"Completed in the last {COMPLETED_DAYS} days:")
-                lines.extend(
-                    _task_line(
-                        task,
-                        zone,
-                        extra=f"completed_at: {_fmt_dt(task.completed_at, zone)}",
-                    )
-                    for task in completed
-                )
+                groups.append(TaskGroup(
+                    "completed", 5.0, f"Completed in the last {COMPLETED_DAYS} days:",
+                    [
+                        _task_line(
+                            task, zone, extra=f"completed_at: {_fmt_dt(task.completed_at, zone)}"
+                        )
+                        for task in completed
+                    ],
+                ))
             if cancelled:
-                lines.append("Recently cancelled tasks:")
-                lines.extend(_task_line(task, zone) for task in cancelled)
+                groups.append(TaskGroup(
+                    "cancelled", 6.0, "Recently cancelled tasks:",
+                    [_task_line(task, zone) for task in cancelled],
+                ))
             if not open_tasks and not completed and not cancelled:
-                lines.append("The user has no matching tasks in the current window.")
+                groups.append(TaskGroup(
+                    "no_tasks", 0.0, "The user has no matching tasks in the current window.", [],
+                ))
 
         if need_events:
             since = now - timedelta(days=EVENT_DAYS)
@@ -261,25 +318,29 @@ async def load_task_facts(
                 )
             event_count = len(event_lines)
             if event_lines:
-                lines.append(
-                    "Recorded task events (only logged actions; incomplete work is not a postponement):"
-                )
-                lines.extend(event_lines)
+                groups.append(TaskGroup(
+                    "events", 3.0,
+                    "Recorded task events (only logged actions; incomplete work is not a postponement):",
+                    event_lines,
+                ))
             else:
-                lines.append(
+                groups.append(TaskGroup(
+                    "events_none", 3.0,
                     "No recorded postponement, reschedule, cancellation, or completion events "
-                    f"in the last {EVENT_DAYS} days."
-                )
+                    f"in the last {EVENT_DAYS} days.",
+                    [],
+                ))
 
-        prompt = "\n".join(lines)
-        if len(prompt) > MAX_TASK_CONTEXT_CHARS:
-            prompt = prompt[: MAX_TASK_CONTEXT_CHARS - 1].rstrip() + "…"
+        # No truncation here: the global context budget trims whole items by priority.
+        prompt = render_groups(groups)
         state = "found" if prompt and "no matching tasks" not in prompt.lower() else "none_found"
         if need_tasks and open_count:
             state = "found"
         if need_events and event_count:
             state = "found"
-        return TaskFacts(state, prompt, open_count, overdue_count, event_count, queried=True)
+        return TaskFacts(
+            state, prompt, open_count, overdue_count, event_count, queried=True, groups=groups
+        )
     except Exception:
         logger.warning("Structured task context failed", exc_info=True)
         return TaskFacts("unavailable", "", queried=True)

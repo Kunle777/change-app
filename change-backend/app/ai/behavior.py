@@ -1,6 +1,6 @@
 import logging
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -20,10 +20,51 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class Observation:
+    text: str
+    subject: str = ""  # task title the observation is about; "" for general counts
+
+
+BEHAVIOR_GUIDANCE = (
+    "How to use these: they are background, not a script. Mention at most ONE, and only "
+    "if it genuinely helps with what the user asked. Do not recite counts or numbers "
+    "unless they ask for them. Prefer a gentle offer ('want to make that one smaller?') "
+    "to a statement about them. Never explain WHY they do anything, and never infer "
+    "traits, motivation, or any psychological or medical condition from task activity; "
+    "postponing can have many ordinary reasons."
+)
+
+
+def render_observations(observations: list["Observation"]) -> str:
+    if not observations:
+        return ""
+    body = "\n".join(f"- {item.text}" for item in observations[:MAX_OBSERVATIONS])
+    prompt = (
+        "Behavioral observations (derived from recorded task events only; "
+        "these are observations, not diagnoses or character labels):\n"
+        f"{body}\n{BEHAVIOR_GUIDANCE}"
+    )
+    return prompt
+
+
+def drop_recently_mentioned(
+    observations: list["Observation"], recent_replies: list[str]
+) -> list["Observation"]:
+    """Skip observations about a task the coach already brought up in its last replies."""
+    recent = " ".join(recent_replies).lower()
+    return [
+        item
+        for item in observations
+        if not (item.subject and item.subject.lower() in recent)
+    ]
+
+
+@dataclass
 class BehaviorFacts:
     state: str
     prompt: str
     observation_count: int = 0
+    observations: list[Observation] = field(default_factory=list)
 
 
 def _as_aware(value: datetime | None) -> datetime | None:
@@ -120,15 +161,16 @@ async def load_behavior_observations(
         elif row.event_type == "completed":
             completions.append(_as_aware(row.occurred_at) or now)
 
-    observations: list[str] = []
+    observations: list[Observation] = []
     for task_id, count in postpones.most_common():
         if count < MIN_POSTPONES:
             continue
         title = titles.get(task_id, "a task")
-        observations.append(
+        observations.append(Observation(
             f'Observed: "{title}" has {count} recorded postponements ("not now") '
-            f"in the last {WINDOW_DAYS} days."
-        )
+            f"in the last {WINDOW_DAYS} days.",
+            title,
+        ))
         if len(observations) >= MAX_OBSERVATIONS:
             break
 
@@ -137,10 +179,11 @@ async def load_behavior_observations(
             if count < MIN_DEADLINE_MOVES:
                 continue
             title = titles.get(task_id, "a task")
-            observations.append(
+            observations.append(Observation(
                 f'Observed: "{title}" had {count} recorded deadline changes or '
-                f"reschedules in the last {WINDOW_DAYS} days."
-            )
+                f"reschedules in the last {WINDOW_DAYS} days.",
+                title,
+            ))
             if len(observations) >= MAX_OBSERVATIONS:
                 break
 
@@ -149,20 +192,20 @@ async def load_behavior_observations(
         task for task in created if task.status == StatusEnum.completed
     ]
     if len(completed_tasks) >= MIN_COMPLETIONS_FOR_RATE:
-        observations.append(
+        observations.append(Observation(
             f"Observed: {len(completed_tasks)} of {len(created)} tasks created in the "
             f"last {WINDOW_DAYS} days are currently marked completed. This is a count, "
             "not a judgment."
-        )
+        ))
 
     midpoint = now - timedelta(days=7)
     recent = [stamp for stamp in completions if stamp and stamp >= midpoint]
     previous = [stamp for stamp in completions if stamp and stamp < midpoint]
     if len(completions) >= MIN_COMPLETIONS_FOR_RATE:
-        observations.append(
+        observations.append(Observation(
             f"Observed: {len(recent)} recorded completions in the last 7 days versus "
             f"{len(previous)} in the 7 days before that."
-        )
+        ))
 
     if not observations:
         return BehaviorFacts(
@@ -172,12 +215,8 @@ async def load_behavior_observations(
             "or productivity claims.",
         )
 
-    body = "\n".join(f"- {item}" for item in observations[:MAX_OBSERVATIONS])
-    prompt = (
-        "Behavioral observations (derived from recorded task events only; "
-        "these are observations, not diagnoses or character labels):\n"
-        f"{body}"
+    observations = observations[:MAX_OBSERVATIONS]
+    prompt = render_observations(observations)
+    return BehaviorFacts(
+        "found", prompt, observation_count=len(observations), observations=observations
     )
-    if len(prompt) > MAX_CHARS:
-        prompt = prompt[: MAX_CHARS - 1].rstrip() + "…"
-    return BehaviorFacts("found", prompt, observation_count=len(observations))

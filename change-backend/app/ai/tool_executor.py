@@ -143,6 +143,22 @@ async def validate_confirmation_tool(
             return {"status": "error", "reason": "Task not found or not yours"}
         return {"task_id": str(task.id)}, f'Cancel "{task.title}"?'
 
+    if tool_name == "create_task":
+        # Only reached when creation is forced through confirmation (untrusted context turn).
+        _check_argument_keys(arguments, {"title", "due_date", "priority"})
+        title = arguments.get("title")
+        if not isinstance(title, str) or not title.strip() or len(title.strip()) > 300:
+            raise ValueError("title must contain between 1 and 300 characters")
+        normalized: dict = {"title": title.strip()}
+        summary = f'Add task "{title.strip()}"'
+        due_date = _parse_due_date(arguments.get("due_date"), user)
+        if due_date is not None:
+            normalized["due_date"] = due_date.isoformat()
+            summary += f" due {arguments['due_date']}"
+        priority = _parse_priority(arguments.get("priority"), default="medium")
+        normalized["priority"] = priority.name
+        return normalized, summary + "?"
+
     return {"status": "error", "reason": f"Unknown tool: {tool_name}"}
 
 

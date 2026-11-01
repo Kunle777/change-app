@@ -1,20 +1,26 @@
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass, field, replace
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.behavior import BehaviorFacts, load_behavior_observations
+from app.ai.behavior import (
+    BehaviorFacts,
+    drop_recently_mentioned,
+    load_behavior_observations,
+    render_observations,
+)
 from app.ai.freshness_service import DataFreshness, compute_data_freshness, resolve_user_timezone
 from app.ai.intent_router import SourcePlan, detect_intent, plan_sources
 from app.ai.prompt_builder import build_system_prompt
-from app.ai.task_context import TaskFacts, load_task_facts
+from app.ai.tool_policy import CONFIRMATION_PROMPT_NOTE, TOOLS_UNAVAILABLE_NOTE, decide_tools
+from app.ai.context_budget import Block, fit_blocks, omission_note
+from app.ai.task_context import TaskFacts, load_open_task_titles, load_task_facts, render_groups
 from app.ai.models import AIInteraction
 from app.memory.retrieval import (
     RetrievalResult,
-    memory_allows_tools,
     memory_prompt_section,
     retrieve_memories,
     sanitize_for_prompt,
@@ -42,6 +48,7 @@ class CoachingContext:
     tasks: TaskFacts
     behavior: BehaviorFacts
     allow_tools: bool
+    require_confirmation: bool = False
     memory_sources: list[dict] = field(default_factory=list)
     context_used: str = ""
     conversation_id: UUID | None = None
@@ -85,16 +92,68 @@ def _retrieval_status_line(memory: RetrievalResult, tasks: TaskFacts, behavior: 
     return "Context source status: " + ", ".join(parts) + "."
 
 
-def _assemble_task_section(tasks: TaskFacts, behavior: BehaviorFacts) -> str:
+def _memory_item_size_text(memory) -> str:
+    return memory.text + " " * 60  # label + date prefix overhead
+
+
+def apply_context_budget(
+    history: list[dict],
+    memory: RetrievalResult,
+    tasks: TaskFacts,
+    behavior: BehaviorFacts,
+) -> tuple[list[dict], RetrievalResult, str, BehaviorFacts, str]:
+    """Fit every dynamic source into one budget; returns trimmed copies and an omission note."""
+    blocks: list[Block] = [
+        Block(g.name, g.priority, list(g.items), g.min_items, g.header) for g in tasks.groups
+    ]
+    if behavior.state == "found" and behavior.prompt:
+        blocks.append(Block("behavior", 1.0, [behavior.prompt]))
+    # Newest turns first: the last two are never dropped.
+    history_items = [
+        f"{turn['question']}\n{turn['response']}" for turn in reversed(history)
+    ]
+    blocks.append(Block("history", 2.0, history_items, min_items=min(2, len(history_items))))
+    ranked_memories = sorted(
+        memory.memories,
+        key=lambda m: (m.similarity if m.similarity is not None else 0.0, m.created_at),
+        reverse=True,
+    )
+    blocks.append(
+        Block(
+            "memory",
+            4.0,
+            [_memory_item_size_text(m) for m in ranked_memories],
+            min_items=min(1, len(ranked_memories)),
+        )
+    )
+
+    result = fit_blocks(blocks)
+    kept_history = list(reversed(list(reversed(history))[: result.kept.get("history", len(history))]))
+    kept_memories = sorted(
+        ranked_memories[: result.kept.get("memory", len(ranked_memories))],
+        key=lambda m: m.created_at,
+    )
+    trimmed_memory = replace(memory, memories=kept_memories) if memory.memories else memory
+    tasks_prompt = render_groups(tasks.groups, result.kept) if tasks.groups else tasks.prompt
+    if "behavior" in result.omitted:
+        behavior = BehaviorFacts(behavior.state, "", behavior.observation_count)
+    if result.omitted:
+        logger.info("context budget trimmed: %s total_chars=%d", result.omitted, result.total_chars)
+    return kept_history, trimmed_memory, tasks_prompt, behavior, omission_note(result.omitted)
+
+
+def _assemble_task_section(
+    tasks: TaskFacts, behavior: BehaviorFacts, tasks_prompt: str | None = None
+) -> str:
     blocks = []
     if tasks.state == "unavailable":
         blocks.append(
             "Structured task data could not be loaded (a technical problem). "
             "Do not invent the user's tasks or events."
         )
-    elif tasks.prompt:
+    elif (tasks_prompt if tasks_prompt is not None else tasks.prompt):
         blocks.append(UNTRUSTED_TASK_NOTE)
-        blocks.append(tasks.prompt)
+        blocks.append(tasks_prompt if tasks_prompt is not None else tasks.prompt)
     if behavior.state == "unavailable":
         blocks.append(
             "Behavioral observations could not be computed (a technical problem). "
@@ -115,7 +174,7 @@ async def assemble_coaching_context(
     additional_instructions: str | None = None,
 ) -> CoachingContext:
     intent = detect_intent(message)
-    plan = plan_sources(message, intent)
+    titles = [] if intent == "out_of_scope" else await load_open_task_titles(db, user_id)
     user_timezone = await resolve_user_timezone(db, user_id, timezone_name)
     local_date = datetime.now(user_timezone).date().isoformat()
     freshness = await compute_data_freshness(db, user_id, user_timezone.key)
@@ -128,6 +187,9 @@ async def assemble_coaching_context(
     history = _history_lines(turns)
     history_ids = [turn.id for turn in turns]
     previous_question = turns[-1].question if turns else None
+    plan = plan_sources(
+        message, intent, task_titles=titles, previous_question=previous_question
+    )
 
     tasks = TaskFacts("not_needed", "")
     behavior = BehaviorFacts("not_needed", "")
@@ -143,6 +205,20 @@ async def assemble_coaching_context(
         )
     if plan.need_behavior:
         behavior = await load_behavior_observations(db, user_id, needed=True)
+        if behavior.state == "found" and behavior.observations:
+            # Don't bring up the same task twice in a row; the coach shouldn't nag.
+            recent_replies = [turn["response"] for turn in history[-2:]]
+            fresh = drop_recently_mentioned(behavior.observations, recent_replies)
+            if len(fresh) != len(behavior.observations):
+                behavior = BehaviorFacts(
+                    "found" if fresh else "none_found",
+                    render_observations(fresh)
+                    if fresh
+                    else "Behavioral observations: nothing new to raise beyond what was "
+                    "already discussed in this conversation.",
+                    len(fresh),
+                    fresh,
+                )
 
     if plan.need_memory:
         memory = await retrieve_memories(
@@ -167,7 +243,17 @@ async def assemble_coaching_context(
         behavior.state,
     )
 
-    structured = _assemble_task_section(tasks, behavior)
+    history, memory, tasks_prompt, behavior, note = apply_context_budget(
+        history, memory, tasks, behavior
+    )
+    tool_decision = decide_tools(plan, memory)
+    structured = _assemble_task_section(tasks, behavior, tasks_prompt)
+    if tool_decision.offer_tools and tool_decision.require_confirmation:
+        structured = f"{structured}\n\n{CONFIRMATION_PROMPT_NOTE}"
+    elif not tool_decision.offer_tools and intent != "out_of_scope":
+        structured = f"{structured}\n\n{TOOLS_UNAVAILABLE_NOTE}"
+    if note:
+        structured = f"{structured}\n\n{note}"
     extra = memory_prompt_section(memory, tz_name=timezone_name)
     status = _retrieval_status_line(memory, tasks, behavior)
     system_prompt = build_system_prompt(
@@ -190,7 +276,8 @@ async def assemble_coaching_context(
         memory=memory,
         tasks=tasks,
         behavior=behavior,
-        allow_tools=memory_allows_tools(memory),
+        allow_tools=tool_decision.offer_tools,
+        require_confirmation=tool_decision.require_confirmation,
         memory_sources=sources,
         context_used=context_used,
         conversation_id=conversation_id,
