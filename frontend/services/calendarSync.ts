@@ -81,6 +81,8 @@ function makeEvent(task: CalendarSyncTask, calendarId: string) {
 }
 
 export async function syncTaskToCalendar(task: CalendarSyncTask): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
+
   const key = eventKey(task.id);
   const eventId = await AsyncStorage.getItem(key);
   const calendarId = task.calendar_sync ? await getWritableCalendarId() : null;
@@ -106,6 +108,8 @@ export async function syncTaskToCalendar(task: CalendarSyncTask): Promise<string
 }
 
 export async function removeTaskFromCalendar(taskId: string): Promise<void> {
+  if (Platform.OS === 'web') return;
+
   const key = eventKey(taskId);
   const eventId = await AsyncStorage.getItem(key);
   if (!eventId) return;

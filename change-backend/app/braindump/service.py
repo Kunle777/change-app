@@ -42,8 +42,17 @@ async def create_brain_dump(db: AsyncSession, brain_dump: BrainDumpCreate, user_
     return db_brain_dump
 
 
-async def get_brain_dumps_for_user(db: AsyncSession, user_id: uuid.UUID):
-    result = await db.execute(select(BrainDump).where(BrainDump.user_id == user_id))
+async def get_brain_dumps_for_user(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    limit: int = 50,
+):
+    result = await db.execute(
+        select(BrainDump)
+        .where(BrainDump.user_id == user_id)
+        .order_by(BrainDump.created_at.desc())
+        .limit(limit)
+    )
     return result.scalars().all()
 
 

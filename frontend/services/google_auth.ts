@@ -1,10 +1,15 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
 WebBrowser.maybeCompleteAuthSession();
 
 export async function signInWithGoogle() {
+  if (Platform.OS === 'web') {
+    throw new Error('Google sign-in is available in the Android and iOS app, not the web preview.');
+  }
+
   const redirectTo = AuthSession.makeRedirectUri({
     scheme: 'elvyn',
     path: 'auth/callback',

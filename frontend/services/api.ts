@@ -1,32 +1,13 @@
 import axios from 'axios';
-import Constants from 'expo-constants';
 import { getAuthHeader, supabase } from './supabase';
 
-function getApiBaseUrl() {
-  const isWeb = typeof window !== 'undefined' && typeof window.location !== 'undefined';
-  if (isWeb) {
-    const { protocol, hostname } = window.location;
-    return `${protocol}//${hostname}:8000`;
-  }
+const baseURL = process.env.EXPO_PUBLIC_API_URL?.trim() ?? '';
 
-  const expoConfig = (Constants as any).expoConfig;
-  const legacyManifest = (Constants as any).manifest || (Constants as any).manifest2;
-  const hostUri =
-    expoConfig?.hostUri ||
-    legacyManifest?.extra?.expoClient?.hostUri ||
-    legacyManifest?.debuggerHost;
-  const debuggerHost = typeof hostUri === 'string' ? hostUri.split(':')[0] : null;
-
-  if (debuggerHost) {
-    return `http://${debuggerHost}:8000`;
-  }
-
-  // Use the development machine LAN IP so a physical device can reach the backend
-  return 'http://10.160.53.39:8000'; // Replace with your development machine's LAN IP address
+if (!baseURL && __DEV__) {
+  console.warn(
+    'EXPO_PUBLIC_API_URL is not set. Add it to frontend/.env so the app can reach your API.',
+  );
 }
-
-const baseURL = getApiBaseUrl();
-console.log('API base URL:', baseURL);
 
 export const API_BASE_URL = baseURL;
 
@@ -36,6 +17,13 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+api.interceptors.request.use((config) => {
+  if (!baseURL) {
+    throw new Error('API request blocked: set EXPO_PUBLIC_API_URL in frontend/.env.');
+  }
+  return config;
 });
 
 api.interceptors.response.use(

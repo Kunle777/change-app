@@ -1,17 +1,40 @@
 import { useEffect, useRef } from 'react';
 import { Animated, View, Text, TouchableOpacity } from 'react-native';
+import type { ReactNode } from 'react';
+import type { StyleProp, TextProps, TextStyle } from 'react-native';
 import { Task } from '../../types/task';
 import { useColors } from '../../theme/colors';
 import { isTaskOverdue } from '../../utils/taskDates';
+import AppText from '../ui/AppText';
+import type { TypographyVariant } from '../../theme/typography';
 
 interface TaskRowProps {
   task: Task;
   onPress: () => void;
   onToggleComplete: () => void;
   onMore: () => void;
+  textVariant?: TypographyVariant;
 }
 
-export default function TaskRow({ task, onPress, onToggleComplete, onMore }: TaskRowProps) {
+interface TaskRowTextProps extends TextProps {
+  variant?: TypographyVariant;
+  style?: StyleProp<TextStyle>;
+  children: ReactNode;
+}
+
+function TaskRowText({ variant, style, children, ...props }: TaskRowTextProps) {
+  return variant ? (
+    <AppText variant={variant} style={style} {...props}>
+      {children}
+    </AppText>
+  ) : (
+    <Text style={style} {...props}>
+      {children}
+    </Text>
+  );
+}
+
+export default function TaskRow({ task, onPress, onToggleComplete, onMore, textVariant }: TaskRowProps) {
   const colors = useColors();
   const priorityColors: Record<string, string> = {
     low: colors.success,
@@ -33,9 +56,12 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
   return (
     <TouchableOpacity
       onPress={onPress}
+      accessibilityRole={textVariant ? 'button' : undefined}
+      accessibilityLabel={textVariant ? `Open task: ${task.title}` : undefined}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
+        minHeight: textVariant ? 44 : undefined,
         paddingVertical: 12,
         borderBottomWidth: 1,
         borderBottomColor: colors.border,
@@ -48,36 +74,50 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
         accessibilityRole="button"
         accessibilityLabel={isDone ? 'Task done' : 'Mark task done'}
         style={{
-          width: 26,
-          height: 26,
-          borderRadius: 13,
+          width: textVariant ? 44 : 26,
+          height: textVariant ? 44 : 26,
+          borderRadius: textVariant ? 22 : 13,
           borderWidth: 2,
           borderColor: isDone ? colors.success : colors.border,
           backgroundColor: isDone ? colors.success : 'transparent',
           alignItems: 'center',
           justifyContent: 'center',
-          marginRight: 12,
+          marginRight: textVariant ? 4 : 12,
         }}
       >
         {isDone && (
-          <Animated.Text style={{ color: '#fff', fontSize: 14, fontWeight: '800', transform: [{ scale }] }}>
+          <Animated.Text
+            allowFontScaling
+            maxFontSizeMultiplier={textVariant ? 1.2 : undefined}
+            style={{ color: '#fff', fontSize: 14, fontWeight: '800', transform: [{ scale }] }}
+          >
             ✓
           </Animated.Text>
         )}
       </TouchableOpacity>
 
       <View style={{ flex: 1 }}>
-        <Text
-          style={{
-            fontSize: 15,
-            fontWeight: '500',
-            textDecorationLine: isDone ? 'line-through' : 'none',
-            color: isDone ? colors.textMuted : colors.text,
-          }}
+        <TaskRowText
+          variant={textVariant}
+          style={[
+            textVariant ? null : { fontSize: 15 },
+            {
+              fontWeight: '500',
+              textDecorationLine: isDone ? 'line-through' : 'none',
+              color: isDone ? colors.textMuted : colors.text,
+            },
+          ]}
         >
           {task.title}
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+        </TaskRowText>
+        <View
+          style={{
+            flexDirection: 'row',
+            flexWrap: textVariant ? 'wrap' : 'nowrap',
+            alignItems: 'center',
+            marginTop: 2,
+          }}
+        >
           {task.priority && (
             <View
               style={{
@@ -90,29 +130,59 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore }: Tas
             />
           )}
           {task.category && (
-            <Text style={{ fontSize: 12, color: colors.textMuted, marginRight: 8 }}>{task.category}</Text>
+            <TaskRowText
+              variant={textVariant ? 'body' : undefined}
+              style={[textVariant ? null : { fontSize: 12 }, { color: colors.textMuted, marginRight: 8 }]}
+            >
+              {task.category}
+            </TaskRowText>
           )}
           {task.series_id && task.recurrence && (
-            <Text style={{ fontSize: 11, color: colors.textMuted, marginRight: 8 }}>
+            <TaskRowText
+              variant={textVariant ? 'body' : undefined}
+              style={[textVariant ? null : { fontSize: 11 }, { color: colors.textMuted, marginRight: 8 }]}
+            >
               Repeats {task.recurrence}
-            </Text>
+            </TaskRowText>
           )}
           {task.reminder_time && (
-            <Text style={{ fontSize: 12, color: colors.textMuted }}>
+            <TaskRowText
+              variant={textVariant ? 'body' : undefined}
+              style={[textVariant ? null : { fontSize: 12 }, { color: colors.textMuted }]}
+            >
               {new Date(task.reminder_time).toLocaleTimeString([], {
                 hour: 'numeric',
                 minute: '2-digit',
               })}
-            </Text>
+            </TaskRowText>
           )}
           {isOverdue && (
-            <Text style={{ fontSize: 11, color: colors.danger, marginLeft: 8 }}>Overdue</Text>
+            <TaskRowText
+              variant={textVariant ? 'body' : undefined}
+              style={[textVariant ? null : { fontSize: 11 }, { color: colors.danger, marginLeft: 8 }]}
+            >
+              Overdue
+            </TaskRowText>
           )}
         </View>
       </View>
 
-      <TouchableOpacity onPress={onMore} style={{ padding: 6 }}>
-        <Text style={{ fontSize: 18, color: colors.textMuted }}>⋮</Text>
+      <TouchableOpacity
+        onPress={onMore}
+        accessibilityRole={textVariant ? 'button' : undefined}
+        accessibilityLabel={textVariant ? `More actions for ${task.title}` : undefined}
+        style={
+          textVariant
+            ? { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }
+            : { padding: 6 }
+        }
+      >
+        <TaskRowText
+          variant={textVariant ? 'title' : undefined}
+          style={[textVariant ? null : { fontSize: 18 }, { color: colors.textMuted, lineHeight: 24 }]}
+        >
+          ⋮
+        </TaskRowText>
       </TouchableOpacity>
     </TouchableOpacity>
   );

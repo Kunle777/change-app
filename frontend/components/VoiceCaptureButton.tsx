@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { TouchableOpacity, Text, StyleSheet, Alert } from 'react-native';
+import { Alert, Text, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import {
   startListening,
   stopListening,
   requestSpeechPermissions,
   useSpeechRecognitionEvent,
 } from '../services/VoiceCapture';
+import { useColors } from '../theme/colors';
 
 type Props = {
   onTranscript: (text: string) => void;
@@ -13,6 +15,7 @@ type Props = {
 };
 
 export default function VoiceCaptureButton({ onTranscript, onFinalTranscript }: Props) {
+  const colors = useColors();
   const [isListening, setIsListening] = useState(false);
 
   // These hooks subscribe to native events for as long as this component
@@ -32,7 +35,7 @@ export default function VoiceCaptureButton({ onTranscript, onFinalTranscript }: 
   });
 
   useSpeechRecognitionEvent('error', (event) => {
-    console.log('Speech recognition error:', event.error, event.message);
+    console.warn('Speech recognition error:', event.error, event.message);
     setIsListening(false);
   });
 
@@ -56,27 +59,36 @@ export default function VoiceCaptureButton({ onTranscript, onFinalTranscript }: 
 
   return (
     <TouchableOpacity
-      style={[styles.button, isListening && styles.buttonActive]}
       onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={isListening ? 'Stop voice capture' : 'Start voice capture'}
+      style={{
+        minHeight: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: isListening ? `${colors.danger}18` : colors.primarySoft,
+        paddingHorizontal: 16,
+        borderRadius: 22,
+      }}
     >
-      <Text style={styles.buttonText}>{isListening ? '⏹ Stop' : '🎤 Speak'}</Text>
+      <Ionicons
+        name={isListening ? 'stop-circle-outline' : 'mic-outline'}
+        size={18}
+        color={isListening ? colors.danger : colors.primary}
+      />
+      <Text
+        maxFontSizeMultiplier={1.2}
+        style={{
+          color: isListening ? colors.danger : colors.primary,
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: '600',
+          marginLeft: 7,
+        }}
+      >
+        {isListening ? 'Stop' : 'Speak'}
+      </Text>
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  button: {
-    backgroundColor: '#eee',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    alignItems: 'center',
-  },
-  buttonActive: {
-    backgroundColor: '#e74c3c',
-  },
-  buttonText: {
-    fontWeight: '600',
-    color: '#333',
-  },
-});

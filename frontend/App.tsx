@@ -1,7 +1,7 @@
 import AppNavigator from "./navigation/AppNavigator";
 import { DarkTheme, DefaultTheme, NavigationContainer, useNavigation } from "@react-navigation/native";
 import { useAuthDeepLink } from "./hooks/useAuthDeepLink";
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useColors } from './theme/colors';
@@ -35,6 +35,8 @@ function AppContent() {
   const colors = useColors();
 
   useEffect(() => {
+    if (Platform.OS === 'web') return;
+
     const handledResponseIds = new Set<string>();
     const recordOpenedReminder = (response: Notifications.NotificationResponse) => {
       const request = response.notification.request;
@@ -64,7 +66,7 @@ function AppContent() {
   useEffect(() => {
     const reconcileIfAuthenticated = async () => {
       const { data, error } = await supabase.auth.getSession();
-      if (!error && data.session) {
+      if (Platform.OS !== 'web' && !error && data.session) {
         await reconcileNotifications();
         void recordDailyActivity().catch((activityError) =>
           console.warn('Could not record daily activity', activityError),
@@ -78,7 +80,7 @@ function AppContent() {
         // Supabase recommends deferring other auth calls until its callback returns.
         setTimeout(() => void reconcileIfAuthenticated(), 0);
       } else if (event === 'SIGNED_OUT') {
-        setTimeout(() => void clearTaskReminders(), 0);
+        if (Platform.OS !== 'web') setTimeout(() => void clearTaskReminders(), 0);
       }
     });
 

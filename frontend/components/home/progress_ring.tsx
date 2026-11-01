@@ -1,5 +1,6 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
+import AppText from '../ui/AppText';
 
 type Props = { percent: number; size?: number; stroke?: number; color: string; track: string; textColor: string };
 
@@ -16,7 +17,9 @@ export default function ProgressRing({ percent, size = 76, stroke = 8, color, tr
           strokeLinecap="round" strokeDasharray={[c, c]} strokeDashoffset={c * (1 - clamped / 100)}
         />
       </Svg>
-      <Text style={{ color: textColor, fontWeight: '800', fontSize: size / 4.2 }}>{clamped}%</Text>
+      <AppText variant="title" style={{ color: textColor, textAlign: 'center' }}>
+        {clamped}%
+      </AppText>
     </View>
   );
 }

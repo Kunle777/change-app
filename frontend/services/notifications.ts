@@ -19,7 +19,7 @@ const isExpoGo = (() => {
 })();
 
 export async function requestNotificationPermissions(): Promise<boolean> {
-  if (isExpoGo) return false;
+  if (isExpoGo || Platform.OS === 'web') return false;
   try {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
@@ -160,7 +160,7 @@ export async function scheduleTaskReminder(
 }
 
 export async function cancelTaskReminder(taskId: string): Promise<void> {
-  if (isExpoGo) return;
+  if (isExpoGo || Platform.OS === 'web') return;
   const notificationId = await AsyncStorage.getItem(STORAGE_KEY_PREFIX + taskId);
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
@@ -193,7 +193,7 @@ export async function rescheduleTaskReminder(
 let reconciliation: Promise<void> | null = null;
 
 export function reconcileNotifications(): Promise<void> {
-  if (isExpoGo) return Promise.resolve();
+  if (isExpoGo || Platform.OS === 'web') return Promise.resolve();
   if (reconciliation) return reconciliation;
   reconciliation = reconcileTaskReminders().finally(() => {
     reconciliation = null;
@@ -202,7 +202,7 @@ export function reconcileNotifications(): Promise<void> {
 }
 
 export async function clearTaskReminders(): Promise<void> {
-  if (isExpoGo) return;
+  if (isExpoGo || Platform.OS === 'web') return;
   try {
     const keys = await AsyncStorage.getAllKeys();
     const idKeys = keys.filter((key) => key.startsWith(STORAGE_KEY_PREFIX));

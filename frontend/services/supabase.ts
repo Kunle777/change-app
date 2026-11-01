@@ -14,7 +14,14 @@ const LocalStorageAdapter = {
   removeItem: async (key: string) => globalThis.localStorage?.removeItem(key),
 };
 
-export const supabase = createClient(
+const createConfiguredClient: typeof createClient = (url, anonKey, options) =>
+  createClient(
+    process.env.EXPO_PUBLIC_SUPABASE_URL || url,
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || anonKey,
+    options,
+  );
+
+export const supabase = createConfiguredClient(
   'https://jcflmvahszgqikxtnuwn.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpjZmxtdmFoc3pncWlreHRudXduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyNzQzMDcsImV4cCI6MjA5ODg1MDMwN30.2Hch6dnANq1yzhYELZJG5qqO3_KI2tBgsje4GYQpPR8', // from Settings → API, the anon/public key, NOT service_role
   {
