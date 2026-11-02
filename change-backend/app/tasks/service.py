@@ -16,6 +16,7 @@ from app.tasks.models import (
 )
 from app.tasks.schemas import TaskCreate, TaskResponse, TaskUpdate, SeriesEditRequest
 from app.ai import gemini
+from app.ai.safe_text import redact_internal_identifiers
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import selectinload
 from app.tasks.task_event_service import log_task_event
@@ -124,6 +125,15 @@ async def create_task(
         priority_reminder=task_data.priority_reminder,
         description=task_data.description,
         due_date=_utc(due_date),
+        due_date_is_all_day=(
+            (
+                series.local_time is None
+                if series is not None
+                else task_data.due_date_is_all_day
+            )
+            if due_date is not None
+            else False
+        ),
         reminder_time=_utc(reminder_time),
         recurrence=recurrence,
         series_id=series.id if series else None,
@@ -221,6 +231,8 @@ async def update_task(
     old_reminder_time = db_task.reminder_time
     old_status = db_task.status
     update_data = task_data.model_dump(exclude_unset=True)
+    if "due_date" in update_data and "due_date_is_all_day" not in update_data:
+        update_data["due_date_is_all_day"] = None
     for var, value in update_data.items():
         if var == "recurrence" and value is not None:
             value = value.name
@@ -340,6 +352,7 @@ async def snooze_task(
         if reminder_local_date > due_local_date:
             new_due = _end_of_local_day_utc(reminder_local_date, tz_name)
             db_task.due_date = new_due
+            db_task.due_date_is_all_day = True
             await log_task_event(
                 db,
                 user_id=user_id,
@@ -451,14 +464,14 @@ async def breakdown_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUI
         raise ValueError("Task not found ")
 
     context = (
-        f"Task title: {task.title}\n"
-        f"Task description: {task.description or 'No description provided'}"
+        f"Task title: {redact_internal_identifiers(task.title)}\n"
+        f"Task description: {redact_internal_identifiers(task.description or 'No description provided')}"
     )
     prompt, _ = await build_system_prompt_for_user(
         db,
         user_id,
         "task_help",
-        context,
+        "",
         additional_instructions=(
             "Break the supplied task into 3-6 small, concrete, actionable steps. "
             "Respond with only a JSON array of strings, each string one step. "
@@ -466,8 +479,8 @@ async def breakdown_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUI
         ),
     )
 
-    steps = gemini.generate_structured(prompt)
-    return steps
+    steps = gemini.generate_structured(prompt, context_payload=context)
+    return [redact_internal_identifiers(str(step)) for step in steps]
 
 async def get_completed_recurring_tasks(db: AsyncSession):
     result = await db.execute(
@@ -501,7 +514,10 @@ async def mark_task_completed(db: AsyncSession, task_id: uuid.UUID, user_id: uui
     await db.commit()
     return task
 
-async def reschedule_task(db: AsyncSession, task_id, user_id, due_date, reminder_time) -> Task | None:
+async def reschedule_task(
+    db: AsyncSession, task_id, user_id, due_date, reminder_time,
+    due_date_is_all_day: bool | None = None,
+) -> Task | None:
     task = await get_task_by_id(db, task_id, user_id)
     if not task:
         return None
@@ -509,6 +525,9 @@ async def reschedule_task(db: AsyncSession, task_id, user_id, due_date, reminder
     old_reminder_time = task.reminder_time
     if due_date is not None:
         task.due_date = _utc(due_date)
+        task.due_date_is_all_day = (
+            due_date_is_all_day if due_date_is_all_day is not None else None
+        )
     if reminder_time is not None:
         task.reminder_time = _utc(reminder_time)
         task.is_reminder_sent = False  # new time needs its own reminder fire

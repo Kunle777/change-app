@@ -61,6 +61,14 @@ class StateAndSafetyTests(unittest.TestCase):
         same_id = [memory("x", "brain_dump"), memory("x", "check_in"), memory("x", "brain_dump")]
         self.assertEqual(len(to_sources(same_id)), 2)
 
+    def test_source_snippets_redact_internal_identifiers(self):
+        internal_id = str(uuid.uuid4())
+        source = memory()
+        source.text = f"Task ID: 123 {internal_id}"
+        snippet = to_sources([source])[0]["snippet"]
+        self.assertNotIn(internal_id, snippet)
+        self.assertNotIn("task id: 123", snippet.lower())
+
 
 class UnavailableRetrievalTests(unittest.IsolatedAsyncioTestCase):
     async def test_embedding_outage_never_claims_no_entries(self):

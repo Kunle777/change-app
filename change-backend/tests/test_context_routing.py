@@ -7,6 +7,7 @@ os.environ.setdefault(
 )
 
 from app.ai.intent_router import is_action_request, mentions_open_task, plan_sources  # noqa: E402
+from app.ai.prompt_builder import SYSTEM_PROMPT  # noqa: E402
 
 TITLES = ["Finish portfolio website", "Pay electricity bill"]
 
@@ -16,6 +17,22 @@ def plan(message):
 
 
 class ComposablePlanTests(unittest.TestCase):
+    def test_emotional_questions_do_not_automatically_load_task_workflows(self):
+        for message in (
+            "I feel useless.",
+            "My ADHD is making everything difficult.",
+            "I am overwhelmed.",
+        ):
+            with self.subTest(message=message):
+                p = plan(message)
+                self.assertEqual(p.intent, "emotional_coaching")
+                self.assertFalse(p.need_tasks or p.need_events or p.action_intent)
+
+    def test_explicit_task_discussion_opt_out_is_respected(self):
+        p = plan("I don't want to discuss tasks right now.")
+        self.assertEqual(p.intent, "emotional_coaching")
+        self.assertFalse(p.need_tasks or p.need_events or p.need_behavior or p.action_intent)
+
     def test_current_tasks_question_loads_tasks(self):
         p = plan("What tasks am I currently working on?")
         self.assertTrue(p.need_tasks)
@@ -56,6 +73,15 @@ class ComposablePlanTests(unittest.TestCase):
         p = plan("write me a python script")
         self.assertEqual(p.intent, "out_of_scope")
         self.assertFalse(any([p.need_tasks, p.need_memory, p.action_intent]))
+
+    def test_distress_led_procrastination_query_is_reflection_not_action(self):
+        message = "My ADHD is killing me, I feel so useless. Why do I keep procrastinating?"
+        p = plan_sources(message)
+        self.assertEqual(p.intent, "pattern_reflection")
+        self.assertTrue(p.need_behavior and p.need_memory)
+        self.assertFalse(p.action_intent)
+        self.assertIn("challenge self-blame", SYSTEM_PROMPT)
+        self.assertIn("Do not automatically redirect to overdue tasks", SYSTEM_PROMPT)
 
     def test_sources_are_independent(self):
         # Memory cue + task cue in the same message select both, not one winner.
@@ -106,6 +132,30 @@ class FollowUpTests(unittest.TestCase):
 
     def test_follow_up_never_inherits_an_action(self):
         p = plan_sources("and tomorrow?", previous_question="Add a task to call mum", task_titles=TITLES)
+        self.assertFalse(p.action_intent)
+
+    def test_date_answer_after_action_clarification_is_eligible(self):
+        p = plan_sources(
+            "Today by 6 pm",
+            previous_question="Reschedule Sing barry",
+            previous_response="What date and time should I move it to?",
+        )
+        self.assertTrue(p.action_intent)
+
+    def test_short_answer_without_action_clarification_is_not_eligible(self):
+        p = plan_sources(
+            "Today by 6 pm",
+            previous_question="What should I focus on?",
+            previous_response="How does that sound?",
+        )
+        self.assertFalse(p.action_intent)
+
+    def test_confirmation_does_not_inherit_action_eligibility(self):
+        p = plan_sources(
+            "Yes",
+            previous_question="Reschedule Sing barry",
+            previous_response="What date and time should I move it to?",
+        )
         self.assertFalse(p.action_intent)
 
     def test_unrelated_long_message_does_not_inherit(self):

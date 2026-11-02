@@ -3,6 +3,7 @@ import { API_BASE_URL } from './api';
 import { getAuthHeader } from './supabase';
 import { cancelTaskReminder, scheduleTaskReminder } from './notifications';
 import { removeTaskFromCalendar } from './calendarSync';
+import { localTimeZone } from '../utils/localDate';
 import type { Task } from '../types/task';
 
 export async function getTasks() {
@@ -17,6 +18,7 @@ interface TaskInput {
   priority: string;
   priority_reminder?: boolean;
   due_date?: string;
+  due_date_is_all_day?: boolean | null;
   reminder_time?: string;
   recurrence?: string;
   recurrence_rule?: {
@@ -135,12 +137,14 @@ export async function rescheduleTask(
   taskId: string,
   dueDate?: Date,
   reminderTime?: Date,
+  dueDateIsAllDay = true,
 ): Promise<Task> {
   const res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/reschedule`, {
     method: 'PATCH',
     headers: await getAuthHeader(),
     body: JSON.stringify({
       due_date: dueDate?.toISOString(),
+      due_date_is_all_day: dueDate ? dueDateIsAllDay : undefined,
       reminder_time: reminderTime?.toISOString(),
     }),
   });
@@ -216,8 +220,13 @@ export async function getUndatedTasks(): Promise<Task[]> {
   return response.json();
 }
 
-export async function getCalendarDates(year: number, month: number): Promise<string[]> {
-  const res = await fetch(`${API_BASE_URL}/api/tasks/calendar-dates?year=${year}&month=${month}`, {
+export async function getCalendarDates(
+  year: number,
+  month: number,
+  timezone = localTimeZone(),
+): Promise<string[]> {
+  const params = new URLSearchParams({ year: String(year), month: String(month), timezone });
+  const res = await fetch(`${API_BASE_URL}/api/tasks/calendar-dates?${params}`, {
     headers: await getAuthHeader(),
   });
   if (!res.ok) throw new Error("Couldn't load calendar.");
@@ -225,8 +234,13 @@ export async function getCalendarDates(year: number, month: number): Promise<str
   return data.dates;
 }
 
-export async function getTasksByDate(dateStr: string, filter: string = 'all'): Promise<Task[]> {
-  const res = await fetch(`${API_BASE_URL}/api/tasks/by-date?date=${dateStr}&status=${filter}`, {
+export async function getTasksByDate(
+  dateStr: string,
+  filter: string = 'all',
+  timezone = localTimeZone(),
+): Promise<Task[]> {
+  const params = new URLSearchParams({ date: dateStr, status: filter, timezone });
+  const res = await fetch(`${API_BASE_URL}/api/tasks/by-date?${params}`, {
     headers: await getAuthHeader(),
   });
   if (!res.ok) throw new Error("Couldn't load tasks.");

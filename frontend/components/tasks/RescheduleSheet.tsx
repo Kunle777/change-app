@@ -97,7 +97,7 @@ export default function RescheduleSheet({ visible, task, onClose, onSave }: Prop
             <Text style={{ color: colors.text, fontSize: 18, fontWeight: '800', marginLeft: 10 }}>Reschedule</Text>
           </View>
           <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4, marginBottom: 14 }}>
-            {task?.series_id ? 'Only this occurrence moves. The repeat stays the same.' : 'Choose a new date and time.'}
+            {task?.has_series ? 'Only this occurrence moves. The repeat stays the same.' : 'Choose a new date and time.'}
           </Text>
 
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>

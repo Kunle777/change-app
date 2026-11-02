@@ -17,6 +17,8 @@ const RESOLVED_LABEL: Record<string, string> = {
   rejected: 'Not changed',
   expired: 'Expired — ask me again',
   stale: 'Out of date — ask me again',
+  error: "Couldn't complete — ask me again",
+  invalid: 'No longer available — ask me again',
   resolved: 'Done',
 };
 
@@ -37,7 +39,7 @@ export default function PendingActionCard({ summary, status, busy, onConfirm, on
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
         <Ionicons name="shield-checkmark-outline" size={16} color={colors.accent} />
         <Text style={{ color: colors.textMuted, fontSize: 12, marginLeft: 6, fontWeight: '600' }}>
-          Needs your OK
+          {pending ? 'Needs your OK' : 'Action status'}
         </Text>
       </View>
       <Text style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>{summary}</Text>

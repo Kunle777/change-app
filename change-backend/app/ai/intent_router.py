@@ -31,7 +31,8 @@ _DATE_BROWSE = re.compile(
 )
 _RECALL = re.compile(
     r"\b(remember (what|when|that)|did i (tell|say|mention|write)|i (told you|mentioned|"
-    r"said|wrote) |remind me what)\b",
+    r"said|wrote) |remind me what|what did we (agree|decide)|what we agreed|"
+    r"my (goal|commitment|preference)|about my project)\b",
     re.I,
 )
 _REVIEW = re.compile(
@@ -40,8 +41,21 @@ _REVIEW = re.compile(
     re.I,
 )
 _HELP = re.compile(
-    r"\b(stuck on|help me start|don'?t know where to start|overwhelmed|"
+    r"\b(stuck on|help me start|don'?t know where to start|"
     r"break (this|it) down)\b",
+    re.I,
+)
+_TASK_DISCUSSION_OPT_OUT = re.compile(
+    r"\b(?:i )?(?:don'?t|do not|would rather not|prefer not to)\s+"
+    r"(?:want to\s+)?"
+    r"(?:talk about|discuss|deal with|focus on)\s+(?:my )?(?:tasks?|to-?dos?|work)\b",
+    re.I,
+)
+_EMOTIONAL_CUE = re.compile(
+    r"\b(?:feel(?:ing)? (?:useless|hopeless|worthless|like a failure|overwhelmed|"
+    r"stressed|anxious|down)|adhd|overwhelmed|overwhelm(?:ed|ing)?|"
+    r"i(?:'m| am) (?:useless|a failure|struggling|having a hard time)|"
+    r"everything (?:is|feels) difficult)\b",
     re.I,
 )
 _PLAN = re.compile(
@@ -120,6 +134,23 @@ _STOP_WORDS = frozenset(
     "the a an to of for my on in and or with this that it is be at by do i me up".split()
 )
 _REFERS_TO_TASK = re.compile(r"\b(this|that|the|my) (task|one|thing|project)\b", re.I)
+_ACTION_DETAILS_QUESTION = re.compile(
+    r"\b(what (date|day|time)|when (should|would|do)|which (date|time|task|one)|"
+    r"what would you like me to|please (tell|choose|provide)|"
+    r"what should i (set|move|change)|new date|new time)\b",
+    re.I,
+)
+_ACTION_DETAIL_VALUE = re.compile(
+    r"\b(today|tomorrow|tonight|morning|afternoon|evening|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+    r"next week|this week|at \d|by \d|\d{1,2}(?::\d{2})?\s*(a\.?m\.?|p\.?m\.?))\b",
+    re.I,
+)
+_ACTION_DECLINE = re.compile(r"^\s*(no|nope|never mind|nevermind|cancel|stop)\b", re.I)
+_ACTION_CONFIRMATION = re.compile(
+    r"^\s*(yes|yeah|yep|sure|confirm|do it|go ahead|proceed|ok|okay)\s*[.!]*\s*$",
+    re.I,
+)
 
 
 def is_action_request(message: str) -> bool:
@@ -175,6 +206,8 @@ def detect_intent(message: str) -> str:
         if re.search(pattern, text):
             return "out_of_scope"
 
+    if _TASK_DISCUSSION_OPT_OUT.search(text):
+        return "emotional_coaching"
     if _PATTERN.search(text):
         return "pattern_reflection"
     if _POSTPONE.search(text):
@@ -187,6 +220,8 @@ def detect_intent(message: str) -> str:
         return "recall"
     if _REVIEW.search(text):
         return "daily_review"
+    if _EMOTIONAL_CUE.search(text):
+        return "emotional_coaching"
     if _HELP.search(text):
         return "task_help"
     if _PLAN.search(text):
@@ -215,6 +250,7 @@ def plan_sources(
     *,
     task_titles: "Iterable[str]" = (),
     previous_question: str | None = None,
+    previous_response: str | None = None,
 ) -> SourcePlan:
     """Select context sources independently from cues in the message.
 
@@ -228,7 +264,19 @@ def plan_sources(
     from app.memory.retrieval import should_retrieve
 
     text = question or ""
-    action = is_action_request(text)
+    if _TASK_DISCUSSION_OPT_OUT.search(text):
+        return SourcePlan(
+            intent="emotional_coaching",
+            need_tasks=False,
+            need_events=False,
+            need_behavior=False,
+            need_memory=bool(_MOOD_CUE.search(text)),
+            memory_source_types=("check_in", "brain_dump"),
+            action_intent=False,
+        )
+    action = is_action_request(text) or is_action_detail_follow_up(
+        text, previous_question, previous_response
+    )
     task_named = mentions_open_task(text, task_titles)
     struggle = bool(_STRUGGLE_CUE.search(text))
     mood = bool(_MOOD_CUE.search(text))
@@ -256,6 +304,7 @@ def plan_sources(
         intent in MEMORY_INTENTS
         or should_retrieve(text, intent)
         or (struggle and mood)
+        or (intent == "emotional_coaching" and mood)
     )
 
     memory_types: tuple[str, ...] | None = None
@@ -288,3 +337,24 @@ def plan_sources(
                 action_intent=action,
             )
     return plan
+
+
+def is_action_detail_follow_up(
+    message: str,
+    previous_question: str | None,
+    previous_response: str | None,
+) -> bool:
+    """Permit details only as a short-lived continuation of an explicit action request."""
+    text = (message or "").strip()
+    if (
+        not text
+        or len(text.split()) > 12
+        or _ACTION_DECLINE.search(text)
+        or _ACTION_CONFIRMATION.fullmatch(text)
+        or not previous_question
+        or not is_action_request(previous_question)
+        or not previous_response
+        or not _ACTION_DETAILS_QUESTION.search(previous_response)
+    ):
+        return False
+    return bool(_ACTION_DETAIL_VALUE.search(text) or len(text.split()) <= 5)

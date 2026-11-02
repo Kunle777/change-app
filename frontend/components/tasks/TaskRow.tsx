@@ -137,7 +137,7 @@ export default function TaskRow({ task, onPress, onToggleComplete, onMore, textV
               {task.category}
             </TaskRowText>
           )}
-          {task.series_id && task.recurrence && (
+          {task.has_series && task.recurrence && (
             <TaskRowText
               variant={textVariant ? 'body' : undefined}
               style={[textVariant ? null : { fontSize: 11 }, { color: colors.textMuted, marginRight: 8 }]}

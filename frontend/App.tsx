@@ -11,6 +11,8 @@ import * as Notifications from 'expo-notifications';
 import { recordTaskEvent } from './services/taskEvents';
 import { recordDailyActivity } from './services/activity';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { StatusBar } from 'expo-status-bar';
+
 
 function DeepLinkHandler() {
   const navigation = useNavigation<any>();

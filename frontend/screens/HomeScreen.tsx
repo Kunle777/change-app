@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { RefreshControl, ScrollView, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Image, RefreshControl, ScrollView, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import ElvynMascot from '../components/ElvynMascot';
@@ -165,38 +165,42 @@ export default function HomeScreen({ navigation }: any) {
             borderBottomRightRadius: 28,
           }}
         >
-          <AppText variant="wordmark" style={{ color: '#fff' }}>
-            ELVYN
-          </AppText>
-
-          <View style={{ marginTop: 18 * scale }}>
-            {firstName.trim() ? (
-              <>
-                <AppText variant="greeting" style={{ color: '#C7C4E6' }}>
-                  {getGreeting()},
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 * scale }}>
+            <Image
+              source={require('../assets/branding/04_mark_only_monochrome_dark.png')}
+              resizeMode="contain"
+              accessibilityLabel="Elvyn"
+              style={{ width: 48 * scale, height: 48 * scale, marginRight: 12 * scale }}
+            />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              {firstName.trim() ? (
+                <>
+                  <AppText variant="greeting" style={{ color: '#C7C4E6' }}>
+                    {getGreeting()},
+                  </AppText>
+                  <AppText
+                    variant="display"
+                    accessibilityRole="header"
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                    style={{ color: '#fff', marginTop: 1 * scale }}
+                  >
+                    {firstName.trim()}
+                  </AppText>
+                </>
+              ) : (
+                <AppText variant="display" accessibilityRole="header" style={{ color: '#fff' }}>
+                  {getGreeting()}
                 </AppText>
-                <AppText
-                  variant="display"
-                  accessibilityRole="header"
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  style={{ color: '#fff', marginTop: 1 * scale }}
-                >
-                  {firstName.trim()}
-                </AppText>
-              </>
-            ) : (
-              <AppText variant="display" accessibilityRole="header" style={{ color: '#fff' }}>
-                {getGreeting()}
-              </AppText>
-            )}
+              )}
+            </View>
           </View>
 
           <View
             style={{
               flexDirection: stackedHero ? 'column' : 'row',
               alignItems: stackedHero ? 'stretch' : 'flex-end',
-              marginTop: 14 * scale,
+              marginTop: 18 * scale,
             }}
           >
             <View

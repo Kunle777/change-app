@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Crypto from 'expo-crypto';
 import ChatBubble from '../components/ai/ChatBubble';
 import ChatEmptyState from '../components/ai/ChatEmptyState';
 import HistorySheet from '../components/ai/HistorySheet';
@@ -18,6 +19,7 @@ import {
   getPendingChatActions,
   rejectChatAction,
   sendChatMessage,
+  AIClientError,
 } from '../services/ai';
 import type { ChatConversation, PendingChatAction } from '../services/ai';
 import { supabase } from '../services/supabase';
@@ -26,7 +28,7 @@ import { formatClock } from '../utils/chatFormat';
 import { useColors } from '../theme/colors';
 
 const NEW_CONVERSATION = 'new';
-const FRIENDLY_ERROR = "I couldn't reach Elvyn just now. Check your connection and try again.";
+const FRIENDLY_ERROR = "Elvyn couldn't complete that request. Please try again.";
 const HISTORY_ERROR = "We couldn't load your conversations. Please try again.";
 
 const activeKey = (userId: string) => `elvyn_ai_active_conversation:${userId}`;
@@ -36,8 +38,11 @@ function mapConversationMessages(
   pendingActions: PendingChatAction[],
 ): ChatMessage[] {
   const pendingById = new Map(pendingActions.map((action) => [action.id, action]));
-  return detail.messages.flatMap((turn) => {
+  const mapped = detail.messages.flatMap((turn) => {
     const time = formatClock(turn.created_at);
+    const pending = turn.pending_action_id
+      ? pendingById.get(turn.pending_action_id)
+      : undefined;
     return [
       { id: `${turn.id}-user`, role: 'user' as const, text: turn.question, timestamp: time },
       {
@@ -46,15 +51,19 @@ function mapConversationMessages(
         text: turn.response,
         timestamp: time,
         pendingActionId: turn.pending_action_id ?? undefined,
-        pendingActionSummary: turn.pending_action_id ? pendingById.get(turn.pending_action_id)?.summary : undefined,
-        pendingActionStatus: turn.pending_action_id
-          ? pendingById.has(turn.pending_action_id)
-            ? 'pending'
-            : 'resolved'
-          : undefined,
+        pendingActionSummary: pending?.summary,
+        pendingActionStatus: pending?.status ?? (turn.pending_action_id ? 'invalid' : undefined),
       },
     ];
   });
+  for (const turn of detail.messages) {
+    if (!turn.resolved_action_id || !turn.resolved_action_status) continue;
+    const proposedMessage = mapped.find(
+      (message) => message.role === 'ai' && message.pendingActionId === turn.resolved_action_id,
+    );
+    if (proposedMessage) proposedMessage.pendingActionStatus = turn.resolved_action_status;
+  }
+  return mapped;
 }
 
 export default function AIScreen() {
@@ -128,14 +137,15 @@ export default function AIScreen() {
   }, []);
 
   const send = useCallback(
-    async (text: string, opts?: { alreadyShown?: boolean }) => {
+    async (text: string, opts?: { alreadyShown?: boolean; requestId?: string }) => {
       const message = text.trim();
       if (!message || sending) return;
+      const requestId = opts?.requestId ?? Crypto.randomUUID();
       if (!opts?.alreadyShown) push({ role: 'user', text: message });
       setInput('');
       setSending(true);
       try {
-        const result = await sendChatMessage(message, conversationId);
+        const result = await sendChatMessage(message, conversationId, requestId);
         if (result.conversation_id) {
           setConversationId(result.conversation_id);
           void rememberConversation(result.conversation_id);
@@ -148,9 +158,22 @@ export default function AIScreen() {
           pendingActionSummary: result.pending_action_summary ?? undefined,
           pendingActionStatus: result.pending_action_id ? 'pending' : undefined,
         });
+        if (result.resolved_action_id && result.resolved_action_status) {
+          setMessages((prev) => prev.map((item) => (
+            item.role === 'ai' && item.pendingActionId === result.resolved_action_id
+              ? { ...item, pendingActionStatus: result.resolved_action_status }
+              : item
+          )));
+        }
       } catch (error) {
-        console.log('Chat failed:', error);
-        push({ role: 'ai', text: FRIENDLY_ERROR, failed: true, retryText: message });
+        const friendlyError = error instanceof AIClientError ? error.message : FRIENDLY_ERROR;
+        push({
+          role: 'ai',
+          text: friendlyError,
+          failed: true,
+          retryText: message,
+          retryRequestId: requestId,
+        });
       } finally {
         setSending(false);
       }
@@ -161,7 +184,7 @@ export default function AIScreen() {
   const retry = (failed: ChatMessage) => {
     if (!failed.retryText) return;
     setMessages((prev) => prev.filter((m) => m.id !== failed.id));
-    void send(failed.retryText, { alreadyShown: true });
+    void send(failed.retryText, { alreadyShown: true, requestId: failed.retryRequestId });
   };
 
   const decide = async (message: ChatMessage, confirm: boolean) => {
@@ -169,14 +192,20 @@ export default function AIScreen() {
     setSending(true);
     try {
       const result = confirm ? await confirmChatAction(message.pendingActionId) : await rejectChatAction(message.pendingActionId);
-      setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, pendingActionStatus: result.status } : m)));
+      const displayedStatus = result.status === 'error' && result.retryable
+        ? 'pending'
+        : result.status;
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, pendingActionStatus: displayedStatus } : m)));
       const followUp: Record<string, string> = {
-        created: 'Done. I added the task.',
-        updated: 'Done. The task has been updated.',
-        cancelled: 'Done. The task was cancelled.',
+        created: `Done. I added${result.title ? ` "${result.title}"` : ' the task'}.`,
+        updated: `Done. I updated${result.title ? ` "${result.title}"` : ' the task'}.`,
+        cancelled: `Done. I cancelled${result.title ? ` "${result.title}"` : ' the task'}.`,
         rejected: 'No problem. Nothing was changed.',
         expired: 'That one expired. Ask me again and I will set it up fresh.',
         stale: 'That task changed in the meantime. Ask me again and I will use the latest version.',
+        error: result.retryable
+          ? "I couldn't complete that yet. Please check the details and try confirming again."
+          : "That action is no longer available. Ask me to prepare it again if you still want it.",
       };
       push({ role: 'ai', text: followUp[result.status] ?? "That couldn't be completed. Please try again." });
     } catch (error) {

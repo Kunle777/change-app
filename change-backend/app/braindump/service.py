@@ -125,7 +125,7 @@ async def parse_dump(db: AsyncSession, dump_id: uuid.UUID, user_id: uuid.UUID):
         db,
         user_id,
         "task_planning",
-        f"Brain Dump note:\n{dump.content}",
+        "",
         additional_instructions=(
             "Extract distinct actionable tasks from the supplied note and return a JSON "
             "array. Each item must contain 'title' (short, action-oriented) and 'priority' "
@@ -137,7 +137,11 @@ async def parse_dump(db: AsyncSession, dump_id: uuid.UUID, user_id: uuid.UUID):
         ),
     )
     try:
-        raw = await asyncio.to_thread(gemini.generate_response, prompt)
+        raw = await asyncio.to_thread(
+            gemini.generate_response,
+            prompt,
+            context_payload=f"Brain Dump note:\n{dump.content}",
+        )
     except Exception as error:
         raise ValueError("AI task parsing is temporarily unavailable") from error
     if not isinstance(raw, str) or not raw.strip():

@@ -12,10 +12,20 @@ os.environ.setdefault(
 
 from app.memory import indexer
 from app.memory.config import EMBEDDING_DIM
-from app.memory.sources import check_in_texts, load_source
+from app.memory.sources import (
+    check_in_texts,
+    is_indexable_user_message,
+    load_source,
+)
 
 
 class MemorySourceTests(unittest.IsolatedAsyncioTestCase):
+    def test_short_explicit_preferences_and_commitments_are_indexable(self):
+        self.assertTrue(is_indexable_user_message("I prefer reminders in the morning."))
+        self.assertTrue(is_indexable_user_message("My goal is to finish the course."))
+        self.assertTrue(is_indexable_user_message("Please remember I work nights."))
+        self.assertFalse(is_indexable_user_message("Thanks"))
+
     def test_memory_celery_jobs_are_registered_and_scheduled(self):
         from celery_app import celery_app
         from app.memory.tasks import index_memory_source_job, sweep_memory_index_job

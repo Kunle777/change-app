@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "Elvyn",
     "slug": "change",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/branding/02_app_icon_color.png",
     "scheme": "elvyn",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png",
+      "icon": "./assets/branding/02_app_icon_color.png",
       "bundleIdentifier": "com.ktlabs.elvyn"
     },
     "android": {
@@ -19,16 +19,14 @@
         "WRITE_CALENDAR"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#F5F7FC",
+        "foregroundImage": "./assets/branding/02_app_icon_color_transparent.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/branding/02_app_icon_color.png"
     },
     "plugins": [
       "@react-native-firebase/app",
@@ -36,9 +34,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#F9FAFD",
+          "image": "./assets/branding/01_primary_stacked_logo_transparent.png",
+          "imageWidth": 240,
+          "dark": {
+            "backgroundColor": "#0B0A1F",
+            "image": "./assets/branding/01_primary_stacked_logo_dark.png"
+          }
         }
       ],
       [

@@ -17,11 +17,14 @@ async def record_daily_activity(db: AsyncSession, user_id, timezone_name: str) -
     result = await db.execute(select(User).where(User.id == user_id).with_for_update())
     user = result.scalar_one()
     last_active = user.last_active_date
+    timezone_changed = user.last_active_timezone != timezone_name
     if last_active != today:
         user.current_streak = user.current_streak + 1 if last_active == today - timedelta(days=1) else 1
         user.longest_streak = max(user.longest_streak, user.current_streak)
         user.last_active_date = today
+    if timezone_changed:
         user.last_active_timezone = timezone_name
+    if last_active != today or timezone_changed:
         await db.commit()
         await db.refresh(user)
     return {

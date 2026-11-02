@@ -17,17 +17,54 @@ from app.tasks.schemas import (
 )
 from app.tasks import service
 from app.tasks.models import StatusEnum, TaskEvent, TaskEventOutbox, TaskEventType
+from app.tasks.references import opaque_task_reference, resolve_task_reference
+from app.ai.safe_text import redact_internal_identifiers
 from app.tasks.task_event_service import log_task_event
 from app.ai import service as ai_service
 from app.tasks.voice_parse import parse_voice_task
 from pydantic import BaseModel, Field
 from datetime import date, datetime
 from typing import Literal, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 router = APIRouter(
     prefix="/api/tasks",
     tags=["Tasks"],
 )
+
+
+def _serialize_task(task: Any, user_id: uuid.UUID) -> dict[str, Any]:
+    response = TaskResponse(
+        id=opaque_task_reference(user_id, task.id),
+        title=task.title,
+        priority=task.priority,
+        status=task.status,
+        description=task.description,
+        due_date=task.due_date,
+        due_date_is_all_day=task.due_date_is_all_day,
+        reminder_time=task.reminder_time,
+        priority_reminder=task.priority_reminder,
+        recurrence=task.recurrence,
+        has_series=task.series_id is not None,
+        occurrence_date=task.occurrence_date,
+        created_at=task.created_at,
+    ).model_dump()
+    response["title"] = redact_internal_identifiers(response["title"])
+    response["description"] = (
+        redact_internal_identifiers(response["description"])
+        if response["description"] is not None
+        else None
+    )
+    return response
+
+
+async def _resolve_task_id(
+    reference: str, db: AsyncSession, user_id: uuid.UUID
+) -> uuid.UUID:
+    task_id = await resolve_task_reference(db, user_id, reference)
+    if task_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return task_id
 
 
 class VoiceParseRequest(BaseModel):
@@ -53,6 +90,8 @@ async def parse_voice_task_route(
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(error))
     result = await parse_voice_task(payload.transcript, payload.today)
     await ai_service.increment_usage(db, current_user.id)
+    if isinstance(result.get("title"), str):
+        result["title"] = redact_internal_identifiers(result["title"])
     return result
 
 
@@ -62,7 +101,8 @@ async def get_upcoming_tasks_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await service.get_upcoming_tasks(db, current_user.id, days)
+    tasks = await service.get_upcoming_tasks(db, current_user.id, days)
+    return [_serialize_task(task, current_user.id) for task in tasks]
 
 
 @router.get("/undated", response_model=list[TaskResponse])
@@ -70,7 +110,8 @@ async def get_undated_tasks_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await service.get_undated_tasks(db, current_user.id)
+    tasks = await service.get_undated_tasks(db, current_user.id)
+    return [_serialize_task(task, current_user.id) for task in tasks]
 
 
 @router.post("", response_model=TaskResponse)
@@ -80,7 +121,8 @@ async def create_task_route(
     current_user:User = Depends(get_current_user),
 ):
     
-    return await service.create_task(db,data, current_user.id)
+    task = await service.create_task(db, data, current_user.id)
+    return _serialize_task(task, current_user.id)
 class OverdueResponse(BaseModel):
     count: int
     tasks: list[TaskResponse]
@@ -92,28 +134,42 @@ async def get_overdue_tasks_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await service.get_overdue_tasks(
+    result = await service.get_overdue_tasks(
         db,
         current_user.id,
         current_user.last_active_timezone,
         limit=limit,
     )
+    return {
+        "count": result["count"],
+        "tasks": [_serialize_task(task, current_user.id) for task in result["tasks"]],
+    }
 @router.get("", response_model=list[TaskResponse])
 async def get_tasks_route(
     db:AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return await service.get_tasks_for_user(db, current_user.id)
+    tasks = await service.get_tasks_for_user(db, current_user.id)
+    return [_serialize_task(task, current_user.id) for task in tasks]
 
 @router.get("/calendar-dates", response_model=CalendarDatesResponse)
 async def calendar_dates(
     year: int,
     month: int,
+    timezone_name: str | None = Query(default=None, alias="timezone"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if timezone_name is not None:
+        try:
+            ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="timezone must be a valid IANA time zone",
+            ) from error
     dates = await service.get_task_dates_for_month(
-        db, current_user.id, year, month, current_user.last_active_timezone
+        db, current_user.id, year, month, timezone_name or current_user.last_active_timezone
     )
     return {"dates": dates}
 
@@ -121,58 +177,72 @@ async def calendar_dates(
 @router.get("/by-date", response_model=list[TaskResponse])
 async def tasks_by_date(
     date: str,
-    status: str = "all",
+    task_status: str = Query(default="all", alias="status"),
+    timezone_name: str | None = Query(default=None, alias="timezone"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     target = datetime.strptime(date, "%Y-%m-%d").date()
-    return await service.get_tasks_for_date(
+    if timezone_name is not None:
+        try:
+            ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="timezone must be a valid IANA time zone",
+            ) from error
+    tasks = await service.get_tasks_for_date(
         db,
         current_user.id,
         target,
-        status,
-        current_user.last_active_timezone,
+        task_status,
+        timezone_name or current_user.last_active_timezone,
     )
+    return [_serialize_task(task, current_user.id) for task in tasks]
 
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_task_route(
-    task_id: uuid.UUID,
+    task_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     result = await service.get_task_by_id(db, task_id, current_user.id)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return result
+    return _serialize_task(result, current_user.id)
 
 @router.patch("/{task_id}", response_model=TaskResponse)
 async def patch_task_route(
-    task_id: uuid.UUID,
+    task_id: str,
     data: TaskUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     result= await service.update_task(db, task_id, data, current_user.id)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return result
+    return _serialize_task(result, current_user.id)
 @router.post("/{task_id}/done", response_model=TaskResponse)
 async def complete_task_route(
-    task_id: uuid.UUID,
+    task_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     result = await service.mark_task_completed(db, task_id, current_user.id)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return result
+    return _serialize_task(result, current_user.id)
 
 @router.delete("/{task_id}")
 async def delete_task_route(
-    task_id: uuid.UUID,
+    task_id: str,
     db:AsyncSession = Depends(get_db),
     current_user: User= Depends(get_current_user),
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     result= await service.delete_task(db, task_id, current_user.id)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -180,11 +250,12 @@ async def delete_task_route(
 
 @router.post("/{task_id}/snooze", response_model=TaskResponse)
 async def snooze_task_route(
-    task_id: uuid.UUID,
+    task_id: str,
     payload: TaskSnooze | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     result = await service.snooze_task(
         db,
         task_id,
@@ -193,16 +264,17 @@ async def snooze_task_route(
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return result
+    return _serialize_task(result, current_user.id)
 
 
 @router.post("/{task_id}/events", status_code=status.HTTP_202_ACCEPTED)
 async def record_client_task_event_route(
-    task_id: uuid.UUID,
+    task_id: str,
     payload: ClientTaskEventRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     task = await service.get_task_by_id(db, task_id, current_user.id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -242,10 +314,11 @@ async def record_client_task_event_route(
 
 @router.post("/{task_id}/breakdown", response_model=list[str])
 async def breakdown_task_route(
-    task_id: uuid.UUID,
+    task_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     await ai_service.check_usage(db, current_user.id)
 
     try:
@@ -258,33 +331,40 @@ async def breakdown_task_route(
 
 @router.patch("/{task_id}/reschedule", response_model=TaskResponse)
 async def reschedule_task_route(
-    task_id: uuid.UUID,
+    task_id: str,
     payload: TaskReschedule,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     result = await service.reschedule_task(
-        db, task_id, current_user.id, payload.due_date, payload.reminder_time
+        db, task_id, current_user.id, payload.due_date, payload.reminder_time,
+        payload.due_date_is_all_day,
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return result
+    return _serialize_task(result, current_user.id)
 
 @router.post("/{task_id}/cancel", response_model=TaskResponse)
 async def cancel(
-    task_id: uuid.UUID,
+    task_id: str,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await service.cancel_task(db, task_id, current_user.id)
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
+    result = await service.cancel_task(db, task_id, current_user.id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return _serialize_task(result, current_user.id)
 
 
 @router.post("/{task_id}/stop-series")
 async def stop_series(
-    task_id: uuid.UUID,
+    task_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     stopped = await service.stop_task_series(db, task_id, current_user.id)
     if not stopped:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurring series not found")
@@ -293,14 +373,15 @@ async def stop_series(
 
 @router.patch("/{task_id}/series-edit", response_model=TaskResponse)
 async def edit_series(
-    task_id: uuid.UUID,
+    task_id: str,
     payload: SeriesEditRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    task_id = await _resolve_task_id(task_id, db, current_user.id)
     result = await service.edit_task_series(db, task_id, current_user.id, payload)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     if result is False:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task is not linked to a recurring series")
-    return result
+    return _serialize_task(result, current_user.id)

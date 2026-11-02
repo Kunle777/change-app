@@ -9,10 +9,11 @@ export interface Task {
   status: TaskStatus;
   category?: string | null;
   due_date?: string | null;
+  due_date_is_all_day?: boolean | null;
   reminder_time?: string | null;
   snoozed_until?: string | null;
   recurrence?: string | null;
-  series_id?: string | null;
+  has_series?: boolean;
   occurrence_date?: string | null;
   created_at: string;
   updated_at: string;

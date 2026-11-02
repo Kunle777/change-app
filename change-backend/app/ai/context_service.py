@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,12 +12,25 @@ from app.ai.behavior import (
     load_behavior_observations,
     render_observations,
 )
+from app.ai.checkin_context import (
+    CheckInFacts,
+    is_direct_checkin_question,
+    load_checkin_facts,
+)
 from app.ai.freshness_service import DataFreshness, compute_data_freshness, resolve_user_timezone
-from app.ai.intent_router import SourcePlan, detect_intent, plan_sources
+from app.ai.intent_router import SourcePlan, detect_intent, is_action_request, plan_sources
 from app.ai.prompt_builder import build_system_prompt
-from app.ai.tool_policy import CONFIRMATION_PROMPT_NOTE, TOOLS_UNAVAILABLE_NOTE, decide_tools
+from app.ai.tool_policy import decide_tools
 from app.ai.context_budget import Block, fit_blocks, omission_note
-from app.ai.task_context import TaskFacts, load_open_task_titles, load_task_facts, render_groups
+from app.ai.task_context import (
+    TaskFacts,
+    TaskGroup,
+    is_historical_task_question,
+    load_open_task_titles,
+    load_task_facts,
+    load_task_history_facts,
+    render_groups,
+)
 from app.ai.models import AIInteraction
 from app.memory.retrieval import (
     RetrievalResult,
@@ -48,9 +61,12 @@ class CoachingContext:
     tasks: TaskFacts
     behavior: BehaviorFacts
     allow_tools: bool
+    allowed_tool_names: frozenset[str] = field(default_factory=frozenset)
+    action_request_message: str = ""
     require_confirmation: bool = False
     memory_sources: list[dict] = field(default_factory=list)
     context_used: str = ""
+    context_payload: str = ""
     conversation_id: UUID | None = None
 
 
@@ -83,11 +99,19 @@ async def load_recent_turns(
     return turns
 
 
-def _retrieval_status_line(memory: RetrievalResult, tasks: TaskFacts, behavior: BehaviorFacts) -> str:
+def _retrieval_status_line(
+    memory: RetrievalResult,
+    tasks: TaskFacts,
+    behavior: BehaviorFacts,
+    checkins: CheckInFacts | None = None,
+    historical_tasks: str = "not_needed",
+) -> str:
     parts = [
         f"saved_entries={memory.state}",
         f"tasks={tasks.state}",
         f"behavior={behavior.state}",
+        f"checkins={checkins.state if checkins else 'not_needed'}",
+        f"historical_tasks={historical_tasks}",
     ]
     return "Context source status: " + ", ".join(parts) + "."
 
@@ -187,13 +211,31 @@ async def assemble_coaching_context(
     history = _history_lines(turns)
     history_ids = [turn.id for turn in turns]
     previous_question = turns[-1].question if turns else None
+    previous_response = None
+    previous_created_at = getattr(turns[-1], "created_at", None) if turns else None
+    if previous_created_at:
+        if previous_created_at.tzinfo is None:
+            previous_created_at = previous_created_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - previous_created_at <= timedelta(minutes=10):
+            previous_response = turns[-1].response
     plan = plan_sources(
-        message, intent, task_titles=titles, previous_question=previous_question
+        message,
+        intent,
+        task_titles=titles,
+        previous_question=previous_question,
+        previous_response=previous_response,
     )
 
     tasks = TaskFacts("not_needed", "")
+    historical_task_state = "not_needed"
     behavior = BehaviorFacts("not_needed", "")
     memory = RetrievalResult("not_needed")
+    checkins = CheckInFacts("not_needed", "")
+    direct_checkin = is_direct_checkin_question(message)
+    if direct_checkin:
+        checkins = await load_checkin_facts(
+            db, user_id, message, timezone_name
+        )
 
     if plan.need_tasks or plan.need_events:
         tasks = await load_task_facts(
@@ -203,8 +245,26 @@ async def assemble_coaching_context(
             need_events=plan.need_events,
             timezone_name=timezone_name,
         )
+    if plan.need_tasks and is_historical_task_question(message):
+        historical = await load_task_history_facts(
+            db, user_id, message, timezone_name
+        )
+        historical_task_state = historical.state
+        if historical.groups:
+            tasks.groups.extend(historical.groups)
+        else:
+            tasks.groups.append(
+                TaskGroup(
+                    "historical_search",
+                    0.05,
+                    historical.prompt,
+                    [],
+                )
+            )
     if plan.need_behavior:
-        behavior = await load_behavior_observations(db, user_id, needed=True)
+        behavior = await load_behavior_observations(
+            db, user_id, needed=True, timezone_name=timezone_name
+        )
         if behavior.state == "found" and behavior.observations:
             # Don't bring up the same task twice in a row; the coach shouldn't nag.
             recent_replies = [turn["response"] for turn in history[-2:]]
@@ -220,7 +280,7 @@ async def assemble_coaching_context(
                     fresh,
                 )
 
-    if plan.need_memory:
+    if plan.need_memory and not direct_checkin:
         memory = await retrieve_memories(
             db,
             user_id=user_id,
@@ -246,26 +306,40 @@ async def assemble_coaching_context(
     history, memory, tasks_prompt, behavior, note = apply_context_budget(
         history, memory, tasks, behavior
     )
-    tool_decision = decide_tools(plan, memory)
+    tool_decision = decide_tools(
+        plan,
+        memory,
+        untrusted_context=bool(history) or tasks.state == "found",
+        action_message=(
+            message if plan.action_intent and is_action_request(message)
+            else previous_question or message
+        ),
+    )
+    action_request_message = f"{previous_question or ''} {message}".strip()
     structured = _assemble_task_section(tasks, behavior, tasks_prompt)
-    if tool_decision.offer_tools and tool_decision.require_confirmation:
-        structured = f"{structured}\n\n{CONFIRMATION_PROMPT_NOTE}"
-    elif not tool_decision.offer_tools and intent != "out_of_scope":
-        structured = f"{structured}\n\n{TOOLS_UNAVAILABLE_NOTE}"
+    if checkins.prompt:
+        structured = f"{structured}\n\n{checkins.prompt}"
     if note:
         structured = f"{structured}\n\n{note}"
     extra = memory_prompt_section(memory, tz_name=timezone_name)
-    status = _retrieval_status_line(memory, tasks, behavior)
+    status = _retrieval_status_line(
+        memory, tasks, behavior, checkins, historical_task_state
+    )
+    context_payload = "\n\n".join(
+        part for part in (structured, extra) if part
+    ).strip()
     system_prompt = build_system_prompt(
         intent,
-        structured,
+        "",
         local_date,
         freshness.to_prompt_line(),
         additional_instructions,
-        extra_context=f"{extra}\n\n{status}".strip(),
+        extra_context=status,
     )
     sources = to_sources(memory.memories, timezone_name) if memory.state == "found" else []
-    context_used = "\n\n".join(part for part in (structured, extra, status) if part).strip()
+    context_used = "\n\n".join(
+        part for part in (context_payload, status) if part
+    ).strip()
     return CoachingContext(
         intent=intent,
         plan=plan,
@@ -277,8 +351,11 @@ async def assemble_coaching_context(
         tasks=tasks,
         behavior=behavior,
         allow_tools=tool_decision.offer_tools,
+        allowed_tool_names=tool_decision.allowed_tool_names,
+        action_request_message=action_request_message,
         require_confirmation=tool_decision.require_confirmation,
         memory_sources=sources,
         context_used=context_used,
+        context_payload=context_payload,
         conversation_id=conversation_id,
     )

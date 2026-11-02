@@ -15,11 +15,14 @@ class CoachEvalTests(unittest.IsolatedAsyncioTestCase):
         for case in CASES:
             with self.subTest(group=case["group"], case=case["name"]):
                 context, mocks = await run_scenario(case["scenario"])
-                prompt = context.system_prompt
+                prompt = f"{context.system_prompt}\n{context.context_payload}"
                 for text in case.get("must_contain", []):
                     self.assertIn(text, prompt)
                 for text in case.get("must_not_contain", []):
                     self.assertNotIn(text, prompt)
+                untrusted_text = case.get("must_not_be_trusted_prompt")
+                if untrusted_text:
+                    self.assertNotIn(untrusted_text, context.system_prompt)
                 offer, confirm = case["tools"]
                 self.assertEqual(context.allow_tools, offer)
                 self.assertEqual(context.require_confirmation, confirm)

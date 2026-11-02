@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.models import AIInteraction
 from app.braindump.models import BrainDump
 from app.checkins.models import CheckIn
-from app.memory.sources import CONVERSATION_SOURCE
+from app.memory.sources import CONVERSATION_SOURCE, DURABLE_USER_STATEMENT_SQL
 from app.memory.config import EMBEDDING_DIM, EMBEDDING_MODEL
 from app.memory.embedding import embed_texts
 from app.memory.models import MemoryChunk
@@ -358,7 +358,10 @@ async def sweep_memory_index(
             .select_from(AIInteraction)
             .outerjoin(MemoryChunk, first_conversation)
             .where(
-                func.length(func.trim(AIInteraction.question)) >= 40,
+                or_(
+                    func.length(func.trim(AIInteraction.question)) >= 40,
+                    AIInteraction.question.op("~*")(DURABLE_USER_STATEMENT_SQL),
+                ),
                 _ai_enabled_for(AIInteraction.__tablename__),
                 or_(
                     MemoryChunk.id.is_(None),

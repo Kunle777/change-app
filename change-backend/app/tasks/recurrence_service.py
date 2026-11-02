@@ -113,6 +113,7 @@ async def generate_recurring_task_occurrences(
                 priority=PriorityEnum[series.priority],
                 status=StatusEnum.pending,
                 due_date=due_at.astimezone(timezone.utc),
+                due_date_is_all_day=series.local_time is None,
                 reminder_time=reminder_at.astimezone(timezone.utc) if reminder_at else None,
                 recurrence=series.frequency,
                 series_id=series.id,

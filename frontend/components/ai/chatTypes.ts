@@ -10,4 +10,5 @@ export type ChatMessage = {
   /** A calm error bubble; `retryText` is what to resend. */
   failed?: boolean;
   retryText?: string;
+  retryRequestId?: string;
 };

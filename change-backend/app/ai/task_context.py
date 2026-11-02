@@ -1,4 +1,6 @@
 import logging
+import re
+from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
@@ -8,6 +10,7 @@ from sqlalchemy import or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.memory.retrieval import sanitize_for_prompt
+from app.ai.safe_text import redact_internal_identifiers
 from app.tasks.models import StatusEnum, Task, TaskEvent, TaskEventOutbox
 
 OPEN_STATUSES = (StatusEnum.pending, StatusEnum.in_progress)
@@ -26,6 +29,25 @@ EVENT_TYPES = (
     "deadline_changed",
     "completed",
     "overdue",
+)
+_HISTORICAL_QUERY = re.compile(
+    r"\b(overdue|history|historical|what happened|what did i|did i have|"
+    r"was i|was there|working on)\b",
+    re.I,
+)
+_HISTORICAL_DATE = re.compile(
+    r"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|"
+    r"dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b|\b\d{4}-\d{2}-\d{2}\b|"
+    r"\b(last|past)\s+(week|month|year)\b|\byesterday\b",
+    re.I,
+)
+_HISTORY_STOP_WORDS = frozenset(
+    "what did have was there possible overdue task tasks relating related to on "
+    "write wrote about "
+    "march january february april may june july august september october november "
+    "december jan feb mar apr jun jul aug sep oct nov dec last past week month "
+    "year yesterday history historical working with from".split()
 )
 logger = logging.getLogger(__name__)
 
@@ -79,6 +101,19 @@ def _start_of_local_day(zone: ZoneInfo, now: datetime | None = None) -> datetime
     return datetime.combine(local.date(), time.min, tzinfo=zone).astimezone(timezone.utc)
 
 
+def _is_overdue(task: Task, now: datetime, today_start: datetime) -> bool:
+    if task.due_date is None:
+        return False
+    due_date = _fmt_aware(task.due_date)
+    if getattr(task, "due_date_is_all_day", None) is None:
+        return due_date < today_start
+    return due_date < now
+
+
+def _fmt_aware(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 def _fmt_dt(value: datetime | None, zone: ZoneInfo) -> str:
     if value is None:
         return "not set"
@@ -98,18 +133,158 @@ def _priority_name(task: Task) -> str:
 
 
 def _task_line(task: Task, zone: ZoneInfo, extra: str = "") -> str:
-    title = sanitize_for_prompt(task.title or "", 120)
-    description = sanitize_for_prompt(task.description or "", 160)
-    due = _fmt_dt(task.due_date, zone)
+    title = redact_internal_identifiers(sanitize_for_prompt(task.title or "", 120))
+    description = redact_internal_identifiers(
+        sanitize_for_prompt(task.description or "", 160)
+    )
+    if task.due_date is None:
+        due = "not set"
+    elif getattr(task, "due_date_is_all_day", None) is True:
+        due = _fmt_dt(task.due_date, zone).split(" ", 1)[0] + " (date only)"
+    elif getattr(task, "due_date_is_all_day", None) is None:
+        due = (
+            _fmt_dt(task.due_date, zone).split(" ", 1)[0]
+            + " (time unspecified; legacy deadline type unknown)"
+        )
+    else:
+        due = _fmt_dt(task.due_date, zone)
+    reminder = _fmt_dt(getattr(task, "reminder_time", None), zone)
     pieces = [
-        f'- id: {task.id}; title: "{title}"; status: {_status_name(task)}; '
-        f"priority: {_priority_name(task)}; due: {due}"
+        f'- title: "{title}"; status: {_status_name(task)}; '
+        f"priority: {_priority_name(task)}; deadline: {due}; reminder: {reminder}"
     ]
     if extra:
         pieces.append(extra)
     if description:
         pieces.append(f'description: "{description}"')
     return "; ".join(pieces)
+
+
+def _normalized_title(value: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", (value or "").casefold()))
+
+
+def is_historical_task_question(message: str) -> bool:
+    return bool(_HISTORICAL_QUERY.search(message or "") and _HISTORICAL_DATE.search(message or ""))
+
+
+async def load_task_history_facts(
+    db: AsyncSession,
+    user_id: UUID,
+    message: str,
+    timezone_name: str | None = None,
+) -> TaskFacts:
+    terms = [
+        word for word in re.findall(r"[a-z0-9]+", (message or "").casefold())
+        if (
+            len(word) >= 3
+            and word not in _HISTORY_STOP_WORDS
+            and not word.isdigit()
+            and not re.fullmatch(r"\d+(?:st|nd|rd|th)", word)
+        )
+    ]
+    terms = list(dict.fromkeys(terms))
+    if not terms:
+        return TaskFacts(
+            "none_found",
+            "Historical task search had no task-title terms to search.",
+        )
+
+    try:
+        statement = (
+            select(Task)
+            .where(
+                Task.user_id == user_id,
+                or_(*(Task.title.ilike(f"%{term}%") for term in terms)),
+            )
+            .order_by(Task.created_at.desc())
+            .limit(50)
+        )
+        matches = await _tasks_where(db, statement)
+    except Exception:
+        logger.warning("Historical task search failed", exc_info=True)
+        return TaskFacts(
+            "unavailable",
+            "Historical task records could not be retrieved because of a technical issue. "
+            "Do not claim that no matching task exists.",
+        )
+
+    if not matches:
+        return TaskFacts(
+            "none_found",
+            "Historical task search found no available task records matching the "
+            "title terms. This search includes open, completed, cancelled, undated, "
+            "and soft-deleted task records.",
+        )
+
+    zone = _zone(timezone_name)
+    items = [
+        _task_line(
+            task,
+            zone,
+            extra=(
+                f"completed_at: {_fmt_dt(task.completed_at, zone)}"
+                if task.completed_at
+                else f"deleted_at: {_fmt_dt(task.deleted_at, zone)}"
+                if task.deleted_at
+                else ""
+            ),
+        )
+        for task in matches
+    ]
+    group = TaskGroup(
+        "historical_tasks",
+        0.05,
+        f"Historical task search matched {len(matches)} available record(s) across task statuses:",
+        items,
+        min_items=min(len(items), 5),
+    )
+    return TaskFacts("found", render_groups([group]), groups=[group])
+
+
+async def find_tasks_by_name(
+    db: AsyncSession,
+    user_id: UUID,
+    name: str,
+    *,
+    open_only: bool = False,
+    for_update: bool = False,
+) -> list[Task]:
+    """Search the owner's full task history and rank exact, partial, and typo matches."""
+    query = _normalized_title(name)
+    if len(query) < 3:
+        return []
+    statement = select(Task).where(Task.user_id == user_id)
+    if open_only:
+        statement = statement.where(
+            Task.is_deleted.is_(False), Task.status.in_(OPEN_STATUSES)
+        )
+    if for_update:
+        statement = statement.with_for_update().execution_options(populate_existing=True)
+    tasks = (await db.execute(statement)).scalars().all()
+    ranked: list[tuple[float, Task]] = []
+    for task in tasks:
+        title = _normalized_title(task.title or "")
+        if not title:
+            continue
+        if title == query:
+            score = 1.0
+        elif query in title or title in query:
+            score = 0.9 + 0.1 * min(len(query), len(title)) / max(len(query), len(title))
+        else:
+            score = SequenceMatcher(None, query, title).ratio()
+        if score >= 0.68:
+            ranked.append((score, task))
+    ranked.sort(
+        key=lambda item: (
+            -item[0],
+            (item[1].created_at.isoformat() if item[1].created_at else ""),
+        )
+    )
+    if not ranked:
+        return []
+    best = ranked[0][0]
+    return [task for score, task in ranked if score >= max(0.68, best - 0.12)]
 
 
 async def _tasks_where(db: AsyncSession, statement) -> list[Task]:
@@ -168,9 +343,7 @@ async def load_task_facts(
                 .limit(OPEN_LIMIT),
             )
             overdue = [
-                task
-                for task in open_tasks
-                if task.due_date is not None and task.due_date < today_start
+                task for task in open_tasks if _is_overdue(task, now, today_start)
             ][:OVERDUE_LIMIT]
             upcoming_end = today_start + timedelta(days=UPCOMING_DAYS)
             upcoming = [
@@ -209,7 +382,9 @@ async def load_task_facts(
             overdue_count = len(overdue)
             if overdue:
                 groups.append(TaskGroup(
-                    "overdue", 0.0, "Overdue open tasks:",
+                    "overdue", 0.0,
+                    "Overdue open tasks (they remain in the task list and are not "
+                    "automatically moved to today):",
                     [_task_line(task, zone, "overdue: yes") for task in overdue], min_items=3,
                 ))
             if upcoming:
@@ -297,7 +472,12 @@ async def load_task_facts(
                         )
                     )
                 ).all()
-                titles = {row.id: sanitize_for_prompt(row.title or "", 80) for row in title_rows}
+                titles = {
+                    row.id: redact_internal_identifiers(
+                        sanitize_for_prompt(row.title or "", 80)
+                    )
+                    for row in title_rows
+                }
 
             seen = set()
             event_lines = []
@@ -310,9 +490,9 @@ async def load_task_facts(
                 meta = row.event_metadata or {}
                 extra = ""
                 if row.event_type in {"rescheduled", "deadline_changed"}:
-                    extra = (
-                        f"; old_due={meta.get('old_due')}; new_due={meta.get('new_due')}"
-                    )
+                    old_due = redact_internal_identifiers(str(meta.get("old_due") or "not set"))
+                    new_due = redact_internal_identifiers(str(meta.get("new_due") or "not set"))
+                    extra = f"; old_due={old_due}; new_due={new_due}"
                 event_lines.append(
                     f"- {occurred}: {row.event_type} on \"{title}\"{extra}"
                 )

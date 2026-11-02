@@ -11,6 +11,7 @@ from app.memory.lexical import content_terms
 from app.memory.policy import memory_access
 from app.memory.service import search_by_vector
 from app.memory.time_parse import TimeWindow, parse_time_window, safe_zone
+from app.ai.safe_text import redact_internal_identifiers
 
 logger = logging.getLogger(__name__)
 MIN_SIMILARITY = float(os.getenv("MEMORY_MIN_SIMILARITY", "0.55"))
@@ -29,6 +30,7 @@ _CUES = re.compile(r"""\b(?:
     keep\s+(?:forgetting|putting|avoiding|postponing|delaying|skipping|missing)|
     why\s+do\s+i\s+keep|every\s+time\s+i|
     i\s+(?:said|wrote|mentioned|noted|told\s+you)|did\s+i\s+tell|remind\s+me|remember\s+when|
+    what\s+did\s+we\s+(?:agree|decide)|what\s+we\s+agreed|my\s+(?:goal|commitment|preference)|
     earlier|last\s+(?:week|month|night|time)|yesterday|recently|lately|a\s+while\s+ago|used\s+to|
     how\s+was\s+i|what\s+was\s+i|what\s+did\s+i|did\s+i\s+(?:ever|say|write|mention)|when\s+did\s+i|
     (?:my\s+)?notes?\s+about|my\s+(?:entries|check-?ins?|brain\s?dumps?|journal)|
@@ -94,6 +96,7 @@ def sanitize_for_prompt(text: str, limit: int = MAX_CHARS_PER_CHUNK) -> str:
     cleaned = _TAG.sub("[removed]", text or "")
     cleaned = cleaned.replace("```", "'''").replace('"', "'")
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = redact_internal_identifiers(cleaned)
     return cleaned if len(cleaned) <= limit else cleaned[:limit - 1].rstrip() + "…"
 
 
@@ -156,8 +159,8 @@ def memory_prompt_section(result: RetrievalResult, *, tz_name: str | None = None
     if result.state == "none_found":
         if result.mode == "browse":
             return f"\n\nSaved entries: the user has no saved Brain Dumps or check-ins with text{scope}."
-        return (f"\n\nSaved entries: a search of the user's Brain Dumps and check-ins{scope} found "
-                "nothing relevant. If the question depends on their past entries, say you could not find anything.")
+        return (f"\n\nSaved entries: a search of the user's available saved entries{scope} found "
+                "nothing relevant. If the question depends on past entries, say you could not find anything.")
     tz = safe_zone(tz_name)
     year = (now or datetime.now(timezone.utc)).astimezone(tz).year
     lines = [f'[{index}] {LABELS.get(memory.source_type, memory.source_type)} — '
@@ -177,12 +180,14 @@ def to_sources(memories: list[RetrievedMemory], tz_name: str | None = None,
     tz = safe_zone(tz_name)
     year = (now or datetime.now(timezone.utc)).astimezone(tz).year
     sources: dict[tuple[str, str], dict] = {}
-    for memory in memories:
+    for index, memory in enumerate(memories, start=1):
         sources.setdefault((memory.source_type, memory.source_id), {
-            "id": memory.source_id, "source_type": memory.source_type,
+            "id": f"source-{len(sources) + 1}", "source_type": memory.source_type,
             "kind": LABELS.get(memory.source_type, memory.source_type),
             "date": _fmt_date(memory.created_at, tz, year),
-            "snippet": sanitize_for_prompt(memory.text, 120),
+            "snippet": redact_internal_identifiers(
+                sanitize_for_prompt(memory.text, 120)
+            ),
         })
     return list(sources.values())
 

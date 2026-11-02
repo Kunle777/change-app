@@ -12,7 +12,7 @@ os.environ.setdefault(
 
 from app.ai import action_service  # noqa: E402
 from app.ai.intent_router import plan_sources  # noqa: E402
-from app.ai.tool_policy import CONFIRMATION_PROMPT_NOTE, decide_tools  # noqa: E402
+from app.ai.tool_policy import decide_tools  # noqa: E402
 from app.memory.retrieval import MEMORY_RULES, RetrievalResult, RetrievedMemory  # noqa: E402
 
 T0 = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -43,7 +43,7 @@ class DecisionTests(unittest.TestCase):
 
     def test_memory_does_not_block_a_legitimate_action_but_forces_confirmation(self):
         plan = plan_sources("Remind me to send the portfolio, like I mentioned last week")
-        d = decide_tools(plan, FOUND)
+        d = decide_tools(plan, FOUND, action_message="Remind me to send the portfolio")
         self.assertTrue(plan.need_memory and plan.action_intent)
         self.assertTrue(d.offer_tools)
         self.assertTrue(d.require_confirmation)
@@ -55,10 +55,28 @@ class DecisionTests(unittest.TestCase):
     def test_out_of_scope_gets_no_tools(self):
         self.assertFalse(decide_tools(plan_sources("write me a python script"), NONE).offer_tools)
 
+    def test_task_context_does_not_revoke_tools_and_requires_confirmation(self):
+        d = decide_tools(
+            plan_sources("Reschedule Sing barry"),
+            NONE,
+            action_message="Reschedule Sing barry",
+            untrusted_context=True,
+        )
+        self.assertTrue(d.offer_tools)
+        self.assertTrue(d.require_confirmation)
+        self.assertEqual(d.allowed_tool_names, frozenset({"update_task"}))
+
+    def test_action_only_exposes_matching_operation(self):
+        d = decide_tools(
+            plan_sources("Reschedule Sing barry"),
+            NONE,
+            action_message="Reschedule Sing barry",
+        )
+        self.assertEqual(d.allowed_tool_names, frozenset({"update_task"}))
+
     def test_prompt_wording(self):
         self.assertNotIn("cannot create or change tasks", MEMORY_RULES)
         self.assertIn("current message", MEMORY_RULES)
-        self.assertIn("confirmation", CONFIRMATION_PROMPT_NOTE)
 
 
 class ForcedConfirmationTests(unittest.IsolatedAsyncioTestCase):
@@ -69,6 +87,7 @@ class ForcedConfirmationTests(unittest.IsolatedAsyncioTestCase):
             result = await action_service.handle_tool_call(
                 db, user, uuid.uuid4(), "create_task",
                 {"title": "Send portfolio", "due_date": "2026-10-30"},
+                eligible=True,
                 force_confirmation=True,
             )
         self.assertEqual(result["status"], "awaiting_confirmation")
@@ -86,7 +105,8 @@ class ForcedConfirmationTests(unittest.IsolatedAsyncioTestCase):
             new=AsyncMock(return_value={"status": "created", "task_id": "x"}),
         ) as execute:
             result = await action_service.handle_tool_call(
-                db, user, uuid.uuid4(), "create_task", {"title": "Call mum"}
+                db, user, uuid.uuid4(), "create_task", {"title": "Call mum"},
+                eligible=True,
             )
         self.assertEqual(result["status"], "created")
         execute.assert_awaited_once()
@@ -95,13 +115,14 @@ class ForcedConfirmationTests(unittest.IsolatedAsyncioTestCase):
         user = SimpleNamespace(id=uuid.uuid4(), last_active_timezone="Africa/Lagos")
         db = FakeSession()
         result = await action_service.handle_tool_call(
-            db, user, uuid.uuid4(), "create_task", {"title": "  "}, force_confirmation=True
+            db, user, uuid.uuid4(), "create_task", {"title": "  "},
+            eligible=True, force_confirmation=True
         )
         self.assertEqual(result["status"], "error")
         db.add.assert_not_called()
         result = await action_service.handle_tool_call(
             db, user, uuid.uuid4(), "create_task",
-            {"title": "ok", "task_id": "injected"}, force_confirmation=True,
+            {"title": "ok", "task_id": "injected"}, eligible=True, force_confirmation=True,
         )
         self.assertEqual(result["status"], "error")
 
@@ -125,6 +146,15 @@ class NoToolsHonestyTests(unittest.TestCase):
             self.assertTrue(is_action_request(message), message)
 
     def test_note_forbids_claiming_a_task_change(self):
-        from app.ai.tool_policy import TOOLS_UNAVAILABLE_NOTE
+        from app.ai.service import sanitize_assistant_response
 
-        self.assertIn("Do NOT say or imply", TOOLS_UNAVAILABLE_NOTE)
+        self.assertNotIn(
+            "Tool note:",
+            sanitize_assistant_response("Tool note: no task tools are available this turn."),
+        )
+
+    def test_model_cannot_claim_task_success_without_execution(self):
+        from app.ai.service import _safe_model_response
+
+        response = _safe_model_response("I moved Sing barry to 6 pm.", action_requested=True)
+        self.assertNotIn("moved Sing barry", response)

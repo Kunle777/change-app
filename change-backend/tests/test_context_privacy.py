@@ -129,6 +129,28 @@ class OptOutTests(unittest.IsolatedAsyncioTestCase):
         await policy.set_personal_memory(db, USER, True)
         self.assertNotIn("delete from", " ".join(str(s) for s, _ in db.statements).lower())
 
+    async def test_ai_permission_and_memory_consent_are_separate(self):
+        class PermissionDB:
+            def __init__(self, row):
+                self.row = row
+
+            async def execute(self, *_args, **_kwargs):
+                return SimpleNamespace(first=lambda: self.row)
+
+        ai_allowed = await policy.ai_processing_allowed(PermissionDB((True,)), USER)
+        memory_denied = await policy.memory_access(PermissionDB((False, True)), USER)
+        missing_memory_consent = await policy.memory_access(
+            PermissionDB((None, True)), USER
+        )
+        ai_disabled = await policy.ai_processing_allowed(PermissionDB((False,)), USER)
+        missing_user = await policy.ai_processing_allowed(PermissionDB(None), USER)
+
+        self.assertTrue(ai_allowed.allowed)
+        self.assertFalse(memory_denied.allowed)
+        self.assertFalse(missing_memory_consent.allowed)
+        self.assertFalse(ai_disabled.allowed)
+        self.assertFalse(missing_user.allowed)
+
 
 if __name__ == "__main__":
     unittest.main()

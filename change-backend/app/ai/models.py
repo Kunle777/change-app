@@ -48,6 +48,7 @@ class PendingAction(Base):
     tool_name: Mapped[str] = mapped_column(String(50), nullable=False)
     summary: Mapped[str] = mapped_column(String(300), nullable=False)
     arguments: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    outcome: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=PendingActionStatus.PENDING.value,
         server_default=PendingActionStatus.PENDING.value,
@@ -72,6 +73,11 @@ class AIInteraction(Base):
     pending_action_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("pending_actions.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    resolved_action_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pending_actions.id", ondelete="SET NULL"), nullable=True
+    )
+    resolved_action_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     intent: Mapped[str | None] = mapped_column(String, nullable=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     response: Mapped[str] = mapped_column(Text, nullable=False)
@@ -90,4 +96,7 @@ class AIInteraction(Base):
     )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, server_default=text("now()")
+    )
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_ai_interactions_user_idempotency"),
     )

@@ -91,7 +91,7 @@ export default function TaskActionsHost({ task, onClose, onChanged, onMarkDone, 
       } else if (key === 'cancel') {
         Alert.alert(
           'Cancel this task?',
-          selectedTask.series_id
+          selectedTask.has_series
             ? 'Only this occurrence is cancelled. The repeat continues.'
             : 'It stays in your history.',
           [

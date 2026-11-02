@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     message: str
     conversation_id: UUID | None = None
+    idempotency_key: UUID | None = None
 
 
 class SuggestedAction(BaseModel):
@@ -28,8 +29,11 @@ class ChatResponse(BaseModel):
     message: str
     suggested_actions: list[SuggestedAction] = []
     conversation_id: UUID | None = None
-    pending_action_id: UUID | None = None
+    pending_action_id: str | None = None
     pending_action_summary: str | None = None
+    resolved_action_id: str | None = None
+    resolved_action_status: str | None = None
+    idempotent_replay: bool = Field(default=False, exclude=True)
     memory_sources: list[MemorySource] = Field(default_factory=list)
 
 
@@ -45,7 +49,9 @@ class ConversationTurn(BaseModel):
     response: str
     intent: str | None
     created_at: datetime | None
-    pending_action_id: UUID | None = None
+    pending_action_id: str | None = None
+    resolved_action_id: str | None = None
+    resolved_action_status: str | None = None
 
 
 class ConversationDetail(ConversationSummary):
@@ -53,6 +59,7 @@ class ConversationDetail(ConversationSummary):
 
 
 class PendingActionSummary(BaseModel):
-    id: UUID
+    id: str
     summary: str
     expires_at: datetime
+    status: str

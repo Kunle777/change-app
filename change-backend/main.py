@@ -1,5 +1,7 @@
 import logging
+import re
 import time
+import uuid
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +21,7 @@ from app.users.security import limiter
 from app.ai.routers import router as ai_router
 from app.wins.routers import router as wins_router
 from app.memory.routers import router as memory_router
+from app.ai.errors import AIRequestError
 
 
 logging.basicConfig(level=logging.INFO)
@@ -43,8 +46,16 @@ app.include_router(memory_router)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    provided_id = request.headers.get("x-request-id", "")
+    request_id = (
+        provided_id
+        if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", provided_id)
+        else str(uuid.uuid4())
+    )
+    request.state.request_id = request_id
     start_time = time.perf_counter()
     response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
     duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
     logger.info(
         "%s %s -> %s in %.2fms",
@@ -59,12 +70,40 @@ async def log_requests(request: Request, call_next):
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+@app.exception_handler(AIRequestError)
+async def ai_request_error_handler(request: Request, exc: AIRequestError):
+    logger.error(
+        "AI request failed category=%s request_id=%s",
+        exc.info.code,
+        exc.request_id,
+    )
+    return JSONResponse(
+        status_code=exc.info.status_code,
+        headers={"X-Request-ID": exc.request_id},
+        content={
+            "code": exc.info.code,
+            "message": exc.info.message,
+            "request_id": exc.request_id,
+        },
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.error(
+        "Unhandled request failure request_id=%s error_type=%s",
+        request_id,
+        type(exc).__name__,
+    )
     return JSONResponse(
         status_code=500,
-        content={"message": "An unexpected error occurred."},
+        headers={"X-Request-ID": request_id},
+        content={
+            "code": "backend_error",
+            "message": "Elvyn couldn't complete that request. Please try again.",
+            "request_id": request_id,
+        },
     )
 
 

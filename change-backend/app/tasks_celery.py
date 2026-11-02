@@ -129,6 +129,7 @@ async def _spawn_recurring_async(db: AsyncSession):
             status=StatusEnum.pending,
             recurrence=task.recurrence,
             due_date=next_due,
+            due_date_is_all_day=task.due_date_is_all_day,
             reminder_time=next_reminder,
         )
         db.add(next_task)
@@ -146,4 +147,3 @@ async def _spawn_recurring_tasks_async():
 @celery_app.task(name="app.tasks_celery.spawn_recurring_task_job")
 def spawn_recurring_task_job():
     asyncio.run(_spawn_recurring_tasks_async())
-

@@ -1,82 +1,68 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, TouchableOpacity, FlatList, Modal } from 'react-native';
+import { FlatList, Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Calendar, DateData } from 'react-native-calendars';
+import { Ionicons } from '@expo/vector-icons';
 import TaskRow from '../components/tasks/TaskRow';
 import TaskActionsHost from '../components/tasks/TaskActionsHost';
 import { getCalendarDates, getTasksByDate } from '../services/tasks';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
+import { useColors } from '../theme/colors';
+import { useTheme } from '../contexts/ThemeContext';
 import { localDateString } from '../utils/localDate';
-import { Task } from '../types/task';
+import type { Task } from '../types/task';
 
 const FILTERS = ['all', 'incomplete', 'completed', 'overdue'] as const;
 type Filter = (typeof FILTERS)[number];
-
 const FILTER_LABELS: Record<Filter, string> = {
-  all: 'All',
+  all: 'All tasks',
   incomplete: 'Incomplete',
   completed: 'Completed',
-  overdue: 'Overdue',
+  overdue: 'Carried over',
 };
 
 export default function CalendarScreen({ navigation }: any) {
+  const colors = useColors();
+  const { resolvedTheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const today = new Date();
-  const [selectedDate, setSelectedDate] = useState(localDateString(today));
+  const todayString = localDateString(today);
+  const [selectedDate, setSelectedDate] = useState(todayString);
   const [visibleMonth, setVisibleMonth] = useState({
     year: today.getFullYear(),
     month: today.getMonth() + 1,
   });
-  const [markedDates, setMarkedDates] = useState<Record<string, any>>({});
+  const [dotDates, setDotDates] = useState<string[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const taskRequest = useRef(0);
 
-  const loadMonthDots = useCallback(async () => {
+  const loadDots = useCallback(async () => {
     try {
-      const dates = await getCalendarDates(visibleMonth.year, visibleMonth.month);
-      const marks: Record<string, any> = {};
-      dates.forEach((d) => {
-        marks[d] = { marked: true, dotColor: '#4F46E5' };
-      });
-      marks[selectedDate] = {
-        ...(marks[selectedDate] ?? {}),
-        selected: true,
-        selectedColor: '#4F46E5',
-      };
-      setMarkedDates(marks);
-    } catch (err) {
-      console.log('Failed to load calendar dots:', err);
+      setDotDates(await getCalendarDates(visibleMonth.year, visibleMonth.month));
+    } catch (error) {
+      console.log('Failed to load calendar dots:', error);
     }
-  }, [visibleMonth, selectedDate]);
+  }, [visibleMonth]);
 
-  const requestId = useRef(0);
-  const loadTasksForDate = useCallback(async () => {
-    const id = ++requestId.current;
+  const loadTasks = useCallback(async () => {
+    const requestId = ++taskRequest.current;
     try {
       const result = await getTasksByDate(selectedDate, filter);
-      if (id !== requestId.current) return; // a newer date/filter request won
-      setTasks(result);
-    } catch (err) {
-      console.log('Failed to load tasks for date:', err);
+      if (requestId === taskRequest.current) setTasks(result);
+    } catch (error) {
+      console.log('Failed to load tasks for date:', error);
     }
   }, [selectedDate, filter]);
 
-  useEffect(() => {
-    loadMonthDots();
-  }, [loadMonthDots]);
-
-  useEffect(() => {
-    loadTasksForDate();
-  }, [loadTasksForDate]);
-
   const refresh = useCallback(() => {
-    loadTasksForDate();
-    loadMonthDots();
-  }, [loadTasksForDate, loadMonthDots]);
+    void loadDots();
+    void loadTasks();
+  }, [loadDots, loadTasks]);
 
-  // Pick up changes made elsewhere (Home, Task Detail) when returning here.
   useFocusEffect(
     useCallback(() => {
       refresh();
@@ -84,136 +70,210 @@ export default function CalendarScreen({ navigation }: any) {
   );
 
   const completeOptimistically = useTaskCompletion([setTasks], refresh);
+  const markedDates = useMemo(() => {
+    const marks: Record<string, any> = {};
+    dotDates.forEach((date) => {
+      marks[date] = { marked: true, dotColor: colors.primary };
+    });
+    marks[selectedDate] = {
+      ...(marks[selectedDate] ?? {}),
+      selected: true,
+      selectedColor: colors.primary,
+    };
+    return marks;
+  }, [dotDates, selectedDate, colors.primary]);
 
-  const incompleteTasks = tasks.filter((t) => t.status !== 'completed');
-  const completedTasks = tasks.filter((t) => t.status === 'completed');
-
-  const selectedDateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, {
+  const isToday = selectedDate === todayString;
+  const incompleteTasks = tasks.filter((task) => task.status !== 'completed');
+  const completedTasks = tasks.filter((task) => task.status === 'completed');
+  const selectedLabel = new Date(`${selectedDate}T00:00:00`).toLocaleDateString(undefined, {
     weekday: 'long',
-    month: 'long',
     day: 'numeric',
+    month: 'short',
   });
 
-  return (
-    <View style={{ flex: 1 }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: 16,
-        }}
-      >
-        <Text style={{ fontSize: 18, fontWeight: '700' }}>Calendar</Text>
+  function goToToday() {
+    const now = new Date();
+    setSelectedDate(localDateString(now));
+    setVisibleMonth({ year: now.getFullYear(), month: now.getMonth() + 1 });
+  }
+
+  const header = (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: insets.top + 12 }}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={{ marginRight: 12 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.text, fontSize: 26, fontWeight: '800' }}>Calendar</Text>
+          <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 2 }}>Plan your day, make progress.</Text>
+        </View>
         <TouchableOpacity
           onPress={() => navigation.navigate('CreateTask', { prefilledDate: selectedDate })}
+          accessibilityRole="button"
+          accessibilityLabel="Add task"
+          style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Text style={{ fontSize: 22 }}>+</Text>
+          <Ionicons name="add" size={26} color="#fff" />
         </TouchableOpacity>
       </View>
-
-      <Calendar
-        current={selectedDate}
-        markedDates={markedDates}
-        onDayPress={(day: DateData) => setSelectedDate(day.dateString)}
-        onMonthChange={(month: DateData) =>
-          setVisibleMonth({ year: month.year, month: month.month })
-        }
-        theme={{
-          selectedDayBackgroundColor: '#4F46E5',
-          todayTextColor: '#4F46E5',
-          dotColor: '#4F46E5',
-          arrowColor: '#4F46E5',
-        }}
-      />
 
       <View
         style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          paddingHorizontal: 16,
-          paddingTop: 16,
+          marginHorizontal: 16,
+          marginTop: 18,
+          borderRadius: 20,
+          overflow: 'hidden',
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
         }}
       >
-        <View>
-          <Text style={{ fontWeight: '600', fontSize: 15 }}>{selectedDateLabel}</Text>
-          <Text style={{ color: '#888', fontSize: 12 }}>
-            {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => setShowFilterMenu(true)}>
-          <Text style={{ color: '#4F46E5' }}>{FILTER_LABELS[filter]} ▾</Text>
-        </TouchableOpacity>
+        <Calendar
+          key={resolvedTheme}
+          current={selectedDate}
+          markedDates={markedDates}
+          onDayPress={(day: DateData) => setSelectedDate(day.dateString)}
+          onMonthChange={(month: DateData) => setVisibleMonth({ year: month.year, month: month.month })}
+          enableSwipeMonths
+          theme={{
+            calendarBackground: colors.surface,
+            textSectionTitleColor: colors.textMuted,
+            dayTextColor: colors.text,
+            textDisabledColor: colors.border,
+            todayTextColor: colors.primary,
+            selectedDayBackgroundColor: colors.primary,
+            selectedDayTextColor: '#FFFFFF',
+            monthTextColor: colors.text,
+            arrowColor: colors.primary,
+            dotColor: colors.primary,
+            selectedDotColor: '#FFFFFF',
+            textMonthFontWeight: '700',
+            textMonthFontSize: 17,
+            textDayFontWeight: '500',
+            textDayHeaderFontWeight: '600',
+          }}
+        />
       </View>
 
-      <Modal visible={showFilterMenu} transparent animationType="fade">
-        <TouchableOpacity
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.2)' }}
-          onPress={() => setShowFilterMenu(false)}
-        >
-          <View
-            style={{
-              marginTop: 160,
-              marginRight: 16,
-              marginLeft: 'auto',
-              backgroundColor: '#fff',
-              borderRadius: 12,
-              overflow: 'hidden',
-              width: 160,
-            }}
-          >
-            {FILTERS.map((f) => (
-              <TouchableOpacity
-                key={f}
-                onPress={() => {
-                  setFilter(f);
-                  setShowFilterMenu(false);
-                }}
-                style={{ padding: 12 }}
-              >
-                <Text style={{ fontWeight: f === filter ? '700' : '400' }}>{FILTER_LABELS[f]}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 22, marginBottom: 6 }}>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ color: colors.text, fontSize: 17, fontWeight: '700' }}>{selectedLabel}</Text>
+            {isToday ? (
+              <View style={{ backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, marginLeft: 8 }}>
+                <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '700' }}>Today</Text>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={goToToday} style={{ marginLeft: 8 }} hitSlop={8}>
+                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>Jump to today</Text>
               </TouchableOpacity>
-            ))}
+            )}
           </View>
+        </View>
+        <TouchableOpacity
+          onPress={() => setShowFilterMenu(true)}
+          style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}
+        >
+          <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>
+            {filter === 'all' ? `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}` : FILTER_LABELS[filter]}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color={colors.primary} style={{ marginLeft: 4 }} />
         </TouchableOpacity>
-      </Modal>
+      </View>
+    </View>
+  );
 
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <FlatList
         data={incompleteTasks}
-        keyExtractor={(t) => t.id}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}
-        ListEmptyComponent={
-          <View style={{ alignItems: 'center', marginTop: 40 }}>
-            <Text style={{ color: '#666', fontWeight: '600' }}>Nothing planned yet</Text>
-            <Text style={{ color: '#999', fontSize: 12, marginTop: 4 }}>A clear day is okay.</Text>
-          </View>
-        }
+        keyExtractor={(task) => task.id}
+        ListHeaderComponent={header}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
-          <TaskRow
-            task={item}
-            onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
-            onToggleComplete={() => completeOptimistically(item)}
-            onMore={() => setActiveTask(item)}
-          />
+          <View style={{ paddingHorizontal: 20 }}>
+            <TaskRow
+              task={item}
+              onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
+              onToggleComplete={() => completeOptimistically(item)}
+              onMore={() => setActiveTask(item)}
+            />
+          </View>
         )}
+        ListEmptyComponent={
+          completedTasks.length === 0 ? (
+            <View style={{ alignItems: 'center', marginTop: 36, paddingHorizontal: 20 }}>
+              <Ionicons name="leaf-outline" size={34} color={colors.textMuted} />
+              <Text style={{ color: colors.text, fontWeight: '700', marginTop: 10 }}>Nothing planned yet</Text>
+              <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>A clear day is okay.</Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('CreateTask', { prefilledDate: selectedDate })}
+                style={{ marginTop: 16, backgroundColor: colors.primarySoft, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 }}
+              >
+                <Text style={{ color: colors.primary, fontWeight: '700' }}>+ Add a task</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        }
         ListFooterComponent={
           completedTasks.length > 0 ? (
-            <View style={{ marginTop: 20 }}>
-              <Text style={{ fontWeight: '600', color: '#888', marginBottom: 4 }}>Completed</Text>
-              {completedTasks.map((item) => (
+            <View style={{ marginTop: 18, paddingHorizontal: 20 }}>
+              <Text style={{ color: colors.textMuted, fontWeight: '700', fontSize: 13, marginBottom: 2 }}>
+                Completed ({completedTasks.length})
+              </Text>
+              {completedTasks.map((task) => (
                 <TaskRow
-                  key={item.id}
-                  task={item}
-                  onPress={() => navigation.navigate('TaskDetail', { taskId: item.id })}
-                  onToggleComplete={() => completeOptimistically(item)}
-                  onMore={() => setActiveTask(item)}
+                  key={task.id}
+                  task={task}
+                  onPress={() => navigation.navigate('TaskDetail', { taskId: task.id })}
+                  onToggleComplete={() => completeOptimistically(task)}
+                  onMore={() => setActiveTask(task)}
                 />
               ))}
             </View>
           ) : null
         }
       />
+
+      <Modal visible={showFilterMenu} transparent animationType="fade" onRequestClose={() => setShowFilterMenu(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }} onPress={() => setShowFilterMenu(false)}>
+          <View
+            style={{
+              position: 'absolute',
+              right: 16,
+              top: insets.top + 330,
+              width: 190,
+              backgroundColor: colors.surface,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: colors.border,
+              overflow: 'hidden',
+            }}
+          >
+            {FILTERS.map((value) => (
+              <TouchableOpacity
+                key={value}
+                onPress={() => {
+                  setFilter(value);
+                  setShowFilterMenu(false);
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 13 }}
+              >
+                <Text style={{ color: colors.text, fontWeight: value === filter ? '700' : '400' }}>{FILTER_LABELS[value]}</Text>
+                {value === filter && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
 
       <TaskActionsHost
         task={activeTask}

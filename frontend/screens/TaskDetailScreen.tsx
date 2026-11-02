@@ -216,7 +216,7 @@ export default function TaskDetailScreen({ route, navigation }: any) {
         <TouchableOpacity onPress={handleReschedule} disabled={actionLoading === 'reschedule'}>
           <Text>{actionLoading === 'reschedule' ? 'Rescheduling…' : '📅 Reschedule'}</Text>
         </TouchableOpacity>
-        {task.series_id && (
+        {task.has_series && (
           <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 }}>
             {!editingSeries ? (
               <TouchableOpacity onPress={() => { setSeriesTitle(task.title); setEditingSeries(true); }}>

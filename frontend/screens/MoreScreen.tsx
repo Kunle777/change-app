@@ -1,17 +1,19 @@
 import { useCallback, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { getMyProfile } from '../services/users';
 import { useColors } from '../theme/colors';
+import { useTheme } from '../contexts/ThemeContext';
 import { SettingsGroup, SettingsRow } from '../components/settings/SettingsRow';
 import { HAS_HELP } from '../config/support';
 import { friendlyAuthError } from '../utils/authErrors';
 
 export default function MoreScreen({ navigation }: any) {
   const colors = useColors();
+  const { resolvedTheme } = useTheme();
   const [name, setName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -49,7 +51,19 @@ export default function MoreScreen({ navigation }: any) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32 }}>
-        <Text style={{ color: colors.text, fontSize: 26, fontWeight: '800', marginTop: 8 }}>More</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+          <Image
+            source={
+              resolvedTheme === 'dark'
+                ? require('../assets/branding/04_mark_only_monochrome_dark.png')
+                : require('../assets/branding/04_mark_only_monochrome_transparent.png')
+            }
+            resizeMode="contain"
+            accessibilityLabel="Elvyn"
+            style={{ width: 28, height: 30, marginRight: 10 }}
+          />
+          <Text style={{ color: colors.text, fontSize: 26, fontWeight: '800' }}>More</Text>
+        </View>
 
         <TouchableOpacity
           onPress={() => navigation.navigate('Profile')}

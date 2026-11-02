@@ -1,13 +1,26 @@
-import { Text, View } from 'react-native';
-import { useColors } from '../../theme/colors';
+import { Image, Platform, View } from 'react-native';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export default function AuthLogo() {
-  const colors = useColors();
+  const isWeb = Platform.OS === 'web';
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
   return (
     <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 28 }}>
-      {/* TODO: swap for your lockup SVG, e.g. <ElvynLockup width={180} height={140} /> */}
-      <Text style={{ color: colors.text, fontSize: 30, fontWeight: '800', letterSpacing: 8 }}>ELVYN</Text>
-      <Text style={{ color: colors.textMuted, fontSize: 14, marginTop: 6 }}>Make Progress Personal.</Text>
+      <Image
+        source={
+          isWeb
+            ? isDark
+              ? require('../../assets/branding/05_horizontal_logo_lockup_dark.png')
+              : require('../../assets/branding/05_horizontal_logo_lockup_transparent.png')
+            : isDark
+              ? require('../../assets/branding/01_primary_stacked_logo_dark.png')
+              : require('../../assets/branding/01_primary_stacked_logo_transparent.png')
+        }
+        resizeMode="contain"
+        accessibilityLabel="Elvyn — Your Path to Elevation"
+        style={{ width: isWeb ? 260 : 230, height: isWeb ? 110 : 180 }}
+      />
     </View>
   );
 }

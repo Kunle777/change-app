@@ -11,6 +11,10 @@ from app.checkins.models import CheckIn
 from app.memory.chunking import chunk_text
 
 CONVERSATION_SOURCE = "conversation_user"
+DURABLE_USER_STATEMENT_SQL = (
+    r"\m(i (will|plan to|want to|hope to|prefer|struggle|need|am trying|find it hard)|"
+    r"my (goal|commitment|preference)|please remember|remember that i)\M"
+)
 _GREETING = re.compile(
     r"^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|good morning|good night|gm|gn)\b",
     re.I,
@@ -19,16 +23,25 @@ _SHORT_TASK_COMMAND = re.compile(
     r"\b(add|create|schedule|set|move|cancel|delete|complete)\b.{0,40}\b(task|reminder)\b",
     re.I,
 )
+_DURABLE_USER_STATEMENT = re.compile(
+    r"\b(?:i\s+(?:will|plan to|want to|hope to|prefer|struggle|need|am trying|"
+    r"find it hard)|my\s+(?:goal|commitment|preference)|please remember|"
+    r"remember that i)\b",
+    re.I,
+)
 
 
 def is_indexable_user_message(text: str) -> bool:
     """Keep user-authored chat text that could be useful later; skip chatter and commands."""
     cleaned = (text or "").strip()
-    if len(cleaned) < 40 or len(cleaned.split()) < 8:
-        return False
     if _GREETING.match(cleaned):
         return False
     if _SHORT_TASK_COMMAND.search(cleaned) and len(cleaned) < 100:
+        return False
+    durable_statement = bool(_DURABLE_USER_STATEMENT.search(cleaned))
+    if durable_statement and len(cleaned) >= 12:
+        return True
+    if len(cleaned) < 40 or len(cleaned.split()) < 8:
         return False
     return True
 

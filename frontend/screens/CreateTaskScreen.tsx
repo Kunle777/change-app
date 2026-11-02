@@ -165,6 +165,7 @@ export default function CreateTaskScreen({ route, navigation }: any) {
         description: description.trim() || undefined,
         priority,
         due_date: dueDateEndOfDay?.toISOString(),
+        due_date_is_all_day: Boolean(dueDateEndOfDay),
         reminder_time: reminderDateForSave?.toISOString(),
         recurrence: recurrence === 'none' ? undefined : recurrence,
         priority_reminder: priorityReminder,

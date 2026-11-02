@@ -58,6 +58,7 @@ class TaskCreate(BaseModel):
     status: StatusEnum = StatusEnum.pending
     description: Optional[str] = None
     due_date: Optional[datetime] = None
+    due_date_is_all_day: bool = False
     reminder_time: Optional[datetime] = None
     priority_reminder: bool = False
     recurrence: Optional[RecurrenceEnum] = None
@@ -75,17 +76,17 @@ class TaskCreate(BaseModel):
 
 class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: UUID
-    user_id: UUID
+    id: str
     title: str
     priority: str
     status: str
     description: Optional[str]
     due_date: Optional[datetime]
+    due_date_is_all_day: Optional[bool] = None
     reminder_time: Optional[datetime]
     priority_reminder: bool = False
     recurrence: Optional[str]
-    series_id: UUID | None = None
+    has_series: bool = False
     occurrence_date: date | None = None
     created_at: datetime
 
@@ -100,6 +101,7 @@ class TaskUpdate(BaseModel):
     status: Optional[StatusEnum] = None
     description: Optional[str] = None
     due_date: Optional[datetime] = None
+    due_date_is_all_day: Optional[bool] = None
     reminder_time: Optional[datetime] = None
     priority_reminder: Optional[bool] = None
     recurrence: Optional[RecurrenceEnum] = None
@@ -116,6 +118,7 @@ class TaskUpdate(BaseModel):
 
 class TaskReschedule(BaseModel):
     due_date: datetime | None = None
+    due_date_is_all_day: bool | None = None
     reminder_time: datetime | None = None
 
 class CalendarDatesResponse(BaseModel):

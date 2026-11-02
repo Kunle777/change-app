@@ -81,6 +81,9 @@ class Task(Base):
     status: Mapped[StatusEnum] = mapped_column(Enum(StatusEnum), nullable=False, server_default="pending")
     description: Mapped[str] = mapped_column(nullable=True)
     due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_date_is_all_day: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, default=False
+    )
     reminder_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     recurrence: Mapped[str] = mapped_column(String(), nullable=True, default=None)
     is_reminder_sent: Mapped[bool] = mapped_column(server_default="false", default=False, nullable=False)
